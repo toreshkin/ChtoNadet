@@ -477,7 +477,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Имя: {msg}")
         context.user_data['state'] = None
     else:
-        await update.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())
+        # Silently ignore random text to prevent spamming menu/weather
+        pass
 
 async def post_init(application: ApplicationBuilder):
     """
