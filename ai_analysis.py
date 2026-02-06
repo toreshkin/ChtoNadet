@@ -26,74 +26,76 @@ def init_gemini(api_key: str):
 
 async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     """
-    Analyze clothing photo using Gemini Vision
+    Analyze clothing photo using Gemini Vision with automatic model fallback
     """
+    import PIL.Image
+    
+    # Prepare image
     try:
-        # Try different model names in order of preference
-        model_names = [
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
-            'gemini-pro-vision',
-        ]
-        
-        model = None
-        for model_name in model_names:
-            try:
-                model = genai.GenerativeModel(model_name)
-                logger.info(f"Selected Gemini model: {model_name}")
-                break
-            except Exception as e:
-                continue
-        
-        # Fallback to older default if nothing worked
-        if model is None:
-             model = genai.GenerativeModel('gemini-pro-vision')
-             
-        # Prepare image
-        import PIL.Image
         image = PIL.Image.open(BytesIO(photo_bytes))
-        
-        # Prompt
-        prompt = """
-        Проанализируй эту одежду и опиши:
-        1. Тип одежды (футболка, куртка, свитер, джинсы и т.д.)
-        2. Материал (если виден: хлопок, шерсть, синтетика, джинса)
-        3. Степень теплоты: легкая/средняя/теплая/очень теплая
-        4. Подходящий температурный диапазон в °C (например: от 15 до 25)
-        5. Стиль: casual/formal/sport
-        
-        Ответь ТОЛЬКО в формате JSON без дополнительного текста:
-        {
-          "clothing_type": "тип одежды",
-          "material": "материал или неизвестно",
-          "warmth_level": "легкая|средняя|теплая|очень теплая",
-          "suitable_temp_min": число,
-          "suitable_temp_max": число,
-          "style": "casual|formal|sport",
-          "description": "краткое описание на русском"
-        }
-        """
-        
-        response = model.generate_content([prompt, image])
-        
-        # Parse JSON response
-        response_text = response.text.strip()
-        # Remove markdown code blocks if present
-        if response_text.startswith('```'):
-            response_text = response_text.split('```')[1]
-            if response_text.startswith('json'):
-                response_text = response_text[4:]
-        
-        data = json.loads(response_text)
-        data['success'] = True
-        return data
-        
     except Exception as e:
-        logger.error(f"Gemini analysis error: {e}")
-        return {
-            'success': False,
-            'error': str(e)
-        }
+        return {'success': False, 'error': f"Image load error: {e}"}
+
+    # Prompt
+    prompt = """
+    Проанализируй эту одежду и опиши:
+    1. Тип одежды (футболка, куртка, свитер, джинсы и т.д.)
+    2. Материал (если виден: хлопок, шерсть, синтетика, джинса)
+    3. Степень теплоты: легкая/средняя/теплая/очень теплая
+    4. Подходящий температурный диапазон в °C (например: от 15 до 25)
+    5. Стиль: casual/formal/sport
+    
+    Ответь ТОЛЬКО в формате JSON без дополнительного текста:
+    {
+      "clothing_type": "тип одежды",
+      "material": "материал или неизвестно",
+      "warmth_level": "легкая|средняя|теплая|очень теплая",
+      "suitable_temp_min": число,
+      "suitable_temp_max": число,
+      "style": "casual|formal|sport",
+      "description": "краткое описание на русском"
+    }
+    """
+
+    # List of models to try in order
+    candidates = [
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-pro-vision',
+    ]
+
+    last_error = None
+    
+    for model_name in candidates:
+        try:
+            logger.info(f"Attempting analysis with model: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            
+            # This is the actual network call that might fail
+            response = model.generate_content([prompt, image])
+            
+            # Parse JSON
+            response_text = response.text.strip()
+            if response_text.startswith('```'):
+                response_text = response_text.split('```')[1]
+                if response_text.startswith('json'):
+                    response_text = response_text[4:]
+            
+            data = json.loads(response_text)
+            data['success'] = True
+            logger.info(f"Success with model: {model_name}")
+            return data
+            
+        except Exception as e:
+            logger.warning(f"Model {model_name} failed: {e}")
+            last_error = e
+            continue
+    
+    logger.error("All Gemini models failed")
+    return {
+        'success': False,
+        'error': f"AI Analysis failed. Last error: {str(last_error)}"
+    }
 
 def generate_clothing_recommendation(clothing_data: Dict, weather_data: Dict, user_name: str) -> str:
     """
