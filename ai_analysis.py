@@ -97,6 +97,59 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
         'error': f"AI Analysis failed. Last error: {str(last_error)}"
     }
 
+async def analyze_clothing_text(text_description: str) -> Dict:
+    """
+    Analyze clothing based on text description using Gemini
+    """
+    prompt = f"""
+    Проанализируй это описание одежды: "{text_description}"
+    
+    Опиши:
+    1. Тип одежды (футболка, куртка, свитер, джинсы и т.д.)
+    2. Материал (предположи по типу, если не указан)
+    3. Степень теплоты: легкая/средняя/теплая/очень теплая
+    4. Подходящий температурный диапазон в °C (например: от 15 до 25)
+    5. Стиль: casual/formal/sport
+    
+    Ответь ТОЛЬКО в формате JSON без дополнительного текста:
+    {{
+      "clothing_type": "тип одежды",
+      "material": "материал",
+      "warmth_level": "легкая|средняя|теплая|очень теплая",
+      "suitable_temp_min": число,
+      "suitable_temp_max": число,
+      "style": "casual|formal|sport",
+      "description": "краткое описание на русском"
+    }}
+    """
+
+    candidates = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    last_error = None
+    
+    for model_name in candidates:
+        try:
+            logger.info(f"Attempting text analysis with model: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            
+            response_text = response.text.strip()
+            if response_text.startswith('```'):
+                response_text = response_text.split('```')[1]
+                if response_text.startswith('json'):
+                    response_text = response_text[4:]
+            
+            data = json.loads(response_text)
+            data['success'] = True
+            logger.info(f"Success with model: {model_name}")
+            return data
+            
+        except Exception as e:
+            logger.warning(f"Model {model_name} failed: {e}")
+            last_error = e
+            continue
+            
+    return {'success': False, 'error': f"Analysis failed: {str(last_error)}"}
+
 def generate_clothing_recommendation(clothing_data: Dict, weather_data: Dict, user_name: str) -> str:
     """
     Generate recommendation message comparing clothing with weather
