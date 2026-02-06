@@ -161,7 +161,18 @@ async def generate_weather_message_content(user_id, city_data):
 
 # --- START FLOW ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Привет! Я помогу вам одеваться по погоде.\nКак мне к вам обращаться?")
+    user_id = update.effective_user.id
+    user = await get_user(user_id)
+    
+    if user:
+        await update_streak(user_id) # Log presence
+        await update.message.reply_text(
+            f"👋 С возвращением, {user['user_name']}!\n\nИспользуйте меню ниже для получения прогноза или настроек.",
+            reply_markup=get_main_reply_keyboard()
+        )
+        return ConversationHandler.END # End any accidental convo
+    
+    await update.message.reply_text("👋 Привет! Я помогу вам одеваться по погоде.\nКак мне к вам обращаться?", reply_markup=ReplyKeyboardRemove())
     return ASK_NAME
 
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -193,7 +204,10 @@ async def ask_timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data['temp_timezone'] = tz
         d = get_timezone_display_name(tz)
         await query.edit_message_text(f"✅ Выбран: {d}")
-        await query.message.reply_text("📍 Отправьте свою геолокацию или название города.")
+        await query.message.reply_text(
+            "📍 Отправьте название города или свою геолокацию кнопкой ниже:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("📍 Отправить локацию", request_location=True)]], resize_keyboard=True)
+        )
         return ASK_LOCATION
     return ASK_TIMEZONE
 
@@ -232,15 +246,20 @@ async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔔 Утренний прогноз: {notif_time}\n"
         f"<i>(можно изменить в ⚙️ Настройках)</i>\n\n"
         f"🌤 Смотрите погоду прямо сейчас ниже! ⬇️",
-        reply_markup=get_main_menu_keyboard(),
+        reply_markup=get_main_reply_keyboard(), # Send persistent keyboard
         parse_mode='HTML'
     )
     
     # Automatically show weather after registration
     city_data = await get_primary_city(user.id)
     weather_msg = await generate_weather_message_content(user.id, city_data)
+    
+    # Update streak for the first time
+    current_streak, best_streak, is_new_record = await update_streak(user.id)
+    streak_msg = get_streak_message(current_streak, is_new_record)
+
     await msg.reply_text(
-        weather_msg,
+        f"{weather_msg}\n\n{streak_msg}",
         parse_mode='HTML',
         reply_markup=get_weather_action_buttons()
     )
@@ -248,7 +267,11 @@ async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Отменено.", reply_markup=get_main_menu_keyboard())
+    context.user_data['state'] = None
+    await update.message.reply_text(
+        "❌ Действие отменено.",
+        reply_markup=get_main_reply_keyboard()
+    )
     return ConversationHandler.END
 
 # --- PHOTO HANDLER ---
@@ -311,11 +334,18 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == WEATHER_NOW or data == REFRESH_WEATHER:
         await query.answer("⏳ Загружаю погоду...", show_alert=False)
         city = await get_primary_city(user_id)
+        
+        # Update streak
+        current_streak, best_streak, is_new_record = await update_streak(user_id)
+        streak_msg = get_streak_message(current_streak, is_new_record)
+        
         msg = await generate_weather_message_content(user_id, city)
+        full_msg = f"{msg}\n\n{streak_msg}"
+        
         try:
-             await query.edit_message_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
+             await query.edit_message_text(full_msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
         except:
-             await query.message.reply_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
+             await query.message.reply_text(full_msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
 
     elif data == ANALYZE_CLOTHING:
         # Show popup alert instead of sending message to avoid chat clutter
@@ -456,6 +486,14 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "analyze_again":
         await query.message.reply_text("📸 Отправьте новое фото или используйте текстовый анализ в меню.")
 
+    elif data.startswith("add_geo_"):
+        parts = data.split("_")
+        lat, lon, cname = float(parts[2]), float(parts[3]), parts[4]
+        await add_city(user_id, cname, lat, lon)
+        await query.answer(f"✅ Город {cname} добавлен!")
+        await query.edit_message_text(f"✅ Город <b>{cname}</b> добавлен и установлен как основной.", parse_mode='HTML', reply_markup=get_main_menu_keyboard())
+
+
 async def show_stats(query, user_id):
     city = await get_primary_city(user_id)
     if not city: return
@@ -548,6 +586,23 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Имя: {msg}")
         context.user_data['state'] = None
     else:
+        # Handle persistent keyboard buttons
+        if msg == "🌤 Погода":
+            await quick_weather(update, context)
+            return
+        elif msg == "📊 Статистика":
+            await quick_stats(update, context)
+            return
+        elif msg == "⚙️ Настройки":
+            await quick_settings(update, context)
+            return
+        elif msg == "ℹ️ Помощь":
+            await quick_help(update, context)
+            return
+        elif msg == "📍 Моя геолокация":
+            await update.message.reply_text("📍 Пожалуйста, нажмите на кнопку '📍 Моя геолокация' еще раз, чтобы отправить свои координаты с GPS.")
+            return
+
         # Silently ignore random text to prevent spamming menu/weather
         pass
 

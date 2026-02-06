@@ -144,7 +144,7 @@ def get_main_reply_keyboard():
     keyboard = [
         [KeyboardButton("🌤 Погода"), KeyboardButton("📊 Статистика")],
         [KeyboardButton("⚙️ Настройки"), KeyboardButton("ℹ️ Помощь")],
-        [KeyboardButton("📍 Моя геолокация")]
+        [KeyboardButton("📍 Моя геолокация", request_location=True)]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
