@@ -21,6 +21,7 @@ NOTIFICATION_PREFS = "notif_prefs"
 REFRESH_WEATHER = "refresh_weather"
 WEATHER_DETAILS = "weather_details"
 WEATHER_STATS = "weather_stats"
+ANALYZE_CLOTHING = "analyze_clothing"
 
 SENSITIVITY_COLD = "sens_cold"
 SENSITIVITY_NORMAL = "sens_normal"
@@ -43,6 +44,7 @@ def get_standard_action_buttons():
 def get_main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("🌤️ Погода сейчас", callback_data=WEATHER_NOW)],
+        [InlineKeyboardButton("👗 Анализ одежды", callback_data=ANALYZE_CLOTHING)],
         [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS), InlineKeyboardButton("📊 Статистика", callback_data=STATS)],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data=HELP)]
     ]
@@ -52,14 +54,11 @@ def get_weather_action_buttons():
     """Quick actions for weather message."""
     keyboard = [
         [InlineKeyboardButton("🔄 Обновить", callback_data=REFRESH_WEATHER), 
-         InlineKeyboardButton("📊 Детали", callback_data=WEATHER_DETAILS),
+         InlineKeyboardButton("👗 Анализ одежды", callback_data=ANALYZE_CLOTHING)],
+        [InlineKeyboardButton("📊 Детали", callback_data=WEATHER_DETAILS),
          InlineKeyboardButton("📈 Статистика", callback_data=WEATHER_STATS)],
          [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS)]
     ]
-    # Add standard row? Or is this redundant? 
-    # The weather action buttons are specific. We can append standard too but it might be too many.
-    # User asked for "standard button row to EVERY bot message".
-    # Let's append the menu button row.
     keyboard.append([InlineKeyboardButton("📱 Меню", callback_data=BACK_TO_MENU)])
     return InlineKeyboardMarkup(keyboard)
 

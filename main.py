@@ -28,7 +28,7 @@ from analytics import (
     get_smart_insight
 )
 from recommendations import get_weather_emoji, get_clothing_advice
-from ai_analysis import init_gemini, analyze_clothing_photo, generate_clothing_recommendation
+from ai_analysis import init_gemini, analyze_clothing_photo, generate_clothing_recommendation, analyze_clothing_text
 
 from keyboards import (
     get_main_menu_keyboard, get_settings_keyboard, get_cities_keyboard,
@@ -39,7 +39,7 @@ from keyboards import (
     CHANGE_CITY, LIST_CITIES, ADD_CITY, REMOVE_CITY,
     CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME, CHANGE_TIMEZONE,
     TOGGLE_NOTIFICATIONS, NOTIFICATION_PREFS,
-    REFRESH_WEATHER, WEATHER_DETAILS, WEATHER_STATS,
+    REFRESH_WEATHER, WEATHER_DETAILS, WEATHER_STATS, ANALYZE_CLOTHING,
     SENSITIVITY_COLD, SENSITIVITY_NORMAL, SENSITIVITY_HOT
 )
 from timezones import (
@@ -290,6 +290,10 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
              await query.message.reply_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
 
+    elif data == ANALYZE_CLOTHING:
+        await query.message.reply_text("👗 <b>Опишите вашу одежду текстом:</b>\nНапример: 'белая футболка и джинсы' или 'легкое платье'", parse_mode='HTML')
+        context.user_data['state'] = 'WAITING_CLOTHING_TEXT'
+
     elif data == WEATHER_DETAILS:
         city = await get_primary_city(user_id)
         uv = await get_uv_index(city['city_name'])
@@ -316,7 +320,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=get_notification_settings_keyboard(prefs))
 
     elif data == HELP:
-        await query.edit_message_text("ℹ️ <b>Помощь</b>\n\nПросто отправьте фото одежды для анализа!", reply_markup=get_back_keyboard(), parse_mode='HTML')
+        await query.edit_message_text("ℹ️ <b>Помощь</b>\n\nПросто отправьте фото одежды или нажмите 'Анализ одежды'!", reply_markup=get_back_keyboard(), parse_mode='HTML')
 
     elif data == BACK_TO_MENU:
         try:
@@ -393,7 +397,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Данные устарели")
             
     elif data == "analyze_again":
-        await query.message.reply_text("📸 Отправьте новое фото.")
+        await query.message.reply_text("📸 Отправьте новое фото или используйте текстовый анализ в меню.")
 
 async def show_stats(query, user_id):
     city = await get_primary_city(user_id)
@@ -411,7 +415,49 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     state = context.user_data.get('state')
     
-    if state == 'WAITING_TIME':
+    if state == 'WAITING_CLOTHING_TEXT':
+        await update.message.reply_text("👗 Анализирую описание... ⏳")
+        
+        try:
+            clothing_data = await analyze_clothing_text(msg)
+            
+            if not clothing_data.get('success'):
+                await update.message.reply_text("❌ Не удалось проанализировать описание.")
+                context.user_data['state'] = None
+                return
+
+            # Get weather
+            city = await get_primary_city(user_id)
+            if not city:
+                 await update.message.reply_text("❌ Нет города. Настройте город в меню.")
+                 return
+                 
+            current = await get_current_weather(city['latitude'], city['longitude'])
+            user = await get_user(user_id)
+            
+            message = generate_clothing_recommendation(clothing_data, current, user['user_name'])
+            
+            keyboard = [
+                # Text analysis saving not implemented due to lack of file_id, but can be added if needed
+                [InlineKeyboardButton("🔄 Анализ снова", callback_data=ANALYZE_CLOTHING)],
+                [InlineKeyboardButton("🌤️ Погода", callback_data=WEATHER_NOW),
+                 InlineKeyboardButton("📊 Статистика", callback_data=STATS)],
+                [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS),
+                 InlineKeyboardButton("📱 Меню", callback_data=BACK_TO_MENU)]
+            ]
+            
+            await update.message.reply_text(
+                message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            logger.error(f"Error in text analysis: {e}")
+            await update.message.reply_text("❌ Ошибка при анализе.")
+            
+        context.user_data['state'] = None
+        
+    elif state == 'WAITING_TIME':
         try:
              import datetime
              datetime.datetime.strptime(msg, "%H:%M")
