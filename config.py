@@ -7,8 +7,9 @@ load_dotenv()
 
 # Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") # Changed from OPENWEATHER_API_KEY
+WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "weather_bot.db")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Logging configuration

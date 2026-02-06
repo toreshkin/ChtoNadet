@@ -1,56 +1,66 @@
-# 🌤 Telegram Weather Bot (v3.0 - Enhanced)
+# 🌤 Telegram Weather Bot (v3.1 - AI Powered)
 
-Smart weather bot with analytics, advanced insights, and proactive notifications.
+Smart weather bot with analytics, advanced insights, and proactive notifications. Now with Google Gemini AI for wardrobe analysis!
 
-## ✨ New Features (v3.0)
-*   **� Analytics & Insights**:
+## ✨ New Features (v3.1)
+*   **🤖 AI Clothing Analysis**:
+    *   Send a photo of any clothing item.
+    *   Bot detects type, material, and warmth using Gemini Vision.
+    *   Compares with current weather to give a strict "Go/No-Go" verdict.
+    *   Save items to your virtual wardrobe.
+*   **📊 Analytics & Insights**:
     *   Compare today's weather with yesterday ("Today is 5°C warmer").
     *   Weekly temperature trend graphs with emojis.
-    *   Activity recommendations (Best time for a walk, picnic, drying clothes).
-    *   Air Quality Index (AQI) with health recommendations.
-    *   UV Index alerts and protection advice.
+    *   Activity recommendations.
+    *   Air Quality (AQI) & UV Index alerts.
 *   **🔔 Smart Notifications**:
-    *   **Rain Alert**: Warns you 1 hour before rain starts.
-    *   **Temp Change**: Alerts on drastic temperature drops/rises.
-    *   **Severe Weather**: Storm and wind warnings.
-    *   **Morning Summary**: Includes daily focus (UV, umbrella need).
-    *   **Perfect Weather**: Notification when conditions are ideal for activities.
+    *   Rain Alert (1h before), Temp Change, Severe Weather.
+    *   Morning Summary with daily focus.
 *   **🎨 Rich UX**:
-    *   Beautiful HTML-formatted cards with "Mood" icons.
-    *   Interactive Hourly Forecast buttons.
-    *   Quick action buttons (Refresh, Details, Stats).
-    *   Visual progress bars and clear layouts.
-*   **⚙️ Advanced Settings**:
-    *   Granular notification control (toggle Rain, UV, AQI alerts separately).
-    *   Multiple cities support with "Primary" city selection.
-    *   Personalized naming and sensitivity settings.
+    *   Persistent action buttons on every message (Weather, Stats, Menu).
+    *   Mood-based weather icons.
+    *   Interactive layouts.
 
 ## 🛠 Installation
 
 1.  Clone repository.
 2.  Create venv: `python -m venv venv`
 3.  Install: `pip install -r requirements.txt`
-4.  Configure `.env` with `TELEGRAM_BOT_TOKEN` and `WEATHERAPI_KEY`.
+4.  Configure `.env` with API keys.
 5.  Run: `python main.py`
+
+### API Keys Setup
+1.  **Telegram**: Get from @BotFather.
+2.  **WeatherAPI**: Get from [weatherapi.com](https://www.weatherapi.com/).
+3.  **Google Gemini**: 
+    - Go to [Google AI Studio](https://ai.google.dev/).
+    - "Get API key" -> Create key.
+    - Free tier allows 15 requests/minute.
+
+**Env file example:** 
+```
+TELEGRAM_BOT_TOKEN=...
+WEATHERAPI_KEY=...
+GEMINI_API_KEY=...
+```
 
 ## 🤖 Usage
 
 ### Start
 Send `/start`. The bot will guide you through setting your Name, Timezone, and City.
 
+### AI Analysis
+Simply send a **photo** to the bot. It will analyze usage suitability for today's weather.
+
 ### Main Menu
-*   **🌤 Weather Now**: Detailed card with current temp, feels like, wind, humidity, UV, AQI, and next 3 forecast blocks (Morning/Day/Evening).
-*   **⚙️ Settings**:
-    *   **Notifications**: Toggle specific alerts (Rain, UV, Storm, etc.).
-    *   **Cities**: Manage multiple locations.
-    *   **Timezone/Time**: Adjust when you receive daily reports.
+*   **🌤 Weather Now**: Detailed card with current temp, feels like, wind, humidity, UV, AQI.
+*   **⚙️ Settings**: Control notifications, cities, timezone.
 *   **📊 Statistics**: View weekly temperature trends.
 
 ## 📁 Structure
-*   `main.py`: Bot entry point, handlers, and UI logic.
-*   `analytics.py`: **[NEW]** Logic for comparisons, trends, and smart insights.
-*   `smart_alerts.py`: **[NEW]** Background jobs for Rain/UV/Storm alerts.
-*   `scheduler.py`: Job queue management.
-*   `weather.py`: WeatherAPI client (Forecast, AQI, Alerts).
-*   `database.py`: SQLite storage (Users, Cities, History, Preferences).
+*   `main.py`: Bot entry point, handlers (including Photo).
+*   `ai_analysis.py`: **[NEW]** Google Gemini integration.
+*   `analytics.py`: Logic for comparisons and trends.
+*   `smart_alerts.py`: Background jobs for Rain/UV/Storm alerts.
+*   `database.py`: SQLite storage (Users, Cities, Wardrobe).
 *   `keyboards.py`: Inline keyboard layouts.

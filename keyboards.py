@@ -5,6 +5,7 @@ WEATHER_NOW = "weather_now"
 SETTINGS = "settings"
 STATS = "stats"
 HELP = "help"
+BACK_TO_MENU = "back_menu"
 
 CHANGE_CITY = "change_city"
 ADD_CITY = "add_city"
@@ -16,9 +17,7 @@ CHANGE_SENSITIVITY = "change_sensitivity"
 CHANGE_NAME = "change_name"
 CHANGE_TIMEZONE = "change_timezone"
 TOGGLE_NOTIFICATIONS = "toggle_notif"
-TOGGLE_ALERTS = "toggle_alerts" # Global toggle
-NOTIFICATION_PREFS = "notif_prefs" # Submenu
-BACK_TO_MENU = "back_menu"
+NOTIFICATION_PREFS = "notif_prefs"
 REFRESH_WEATHER = "refresh_weather"
 WEATHER_DETAILS = "weather_details"
 WEATHER_STATS = "weather_stats"
@@ -26,6 +25,20 @@ WEATHER_STATS = "weather_stats"
 SENSITIVITY_COLD = "sens_cold"
 SENSITIVITY_NORMAL = "sens_normal"
 SENSITIVITY_HOT = "sens_hot"
+
+# New standard action buttons
+def get_standard_action_buttons():
+    """Returns the persistent action row."""
+    return [
+        [
+            InlineKeyboardButton("🌤️ Погода", callback_data=WEATHER_NOW),
+            InlineKeyboardButton("📊 Статистика", callback_data=STATS),
+        ],
+        [
+            InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS),
+            InlineKeyboardButton("📱 Меню", callback_data=BACK_TO_MENU),
+        ]
+    ]
 
 def get_main_menu_keyboard():
     keyboard = [
@@ -41,28 +54,27 @@ def get_weather_action_buttons():
         [InlineKeyboardButton("🔄 Обновить", callback_data=REFRESH_WEATHER), 
          InlineKeyboardButton("📊 Детали", callback_data=WEATHER_DETAILS),
          InlineKeyboardButton("📈 Статистика", callback_data=WEATHER_STATS)],
-         # Could add settings or city here too
-        [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS)]
+         [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS)]
+    ]
+    # Add standard row? Or is this redundant? 
+    # The weather action buttons are specific. We can append standard too but it might be too many.
+    # User asked for "standard button row to EVERY bot message".
+    # Let's append the menu button row.
+    keyboard.append([InlineKeyboardButton("📱 Меню", callback_data=BACK_TO_MENU)])
+    return InlineKeyboardMarkup(keyboard)
+
+def get_photo_analysis_buttons(photo_file_id):
+    keyboard = [
+        [
+            InlineKeyboardButton("💾 Сохранить в гардероб", callback_data=f"save_clothing_{photo_file_id}"),
+            InlineKeyboardButton("🔄 Анализ снова", callback_data="analyze_again")
+        ],
+        # Standard buttons
+        *get_standard_action_buttons()
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_hourly_forecast_buttons(start_hour=0):
-    """
-    Shows hourly forecast in chunks.
-    Simple interactive row?
-    Prompt: "[06:00 +10°] [09:00 +13°]..." 
-    """
-    # This usually needs data passed in.
-    # We can't generate dynamic buttons without data unless we encode it or store state.
-    # For now, generate a placeholder that main.py logic will bolster, 
-    # OR main.py generates this keyboard directly.
-    # Let's keep a generic one here or allow passing data.
-    pass 
-
 def get_notification_settings_keyboard(prefs: dict):
-    """
-    prefs: dict with booleans for keys like 'rain_alerts', 'uv_alerts'...
-    """
     def btn(text, key):
         state = "✅" if prefs.get(key, True) else "❌"
         return InlineKeyboardButton(f"{state} {text}", callback_data=f"toggle_{key}")
@@ -80,14 +92,17 @@ def get_settings_keyboard(notifications_on=True, alerts_on=True):
     notif_icon = "🔔" if notifications_on else "🔕"
     
     keyboard = [
+        # Quick Actions
+        [InlineKeyboardButton(f"{notif_icon} Настроить уведомления", callback_data=NOTIFICATION_PREFS)],
         [InlineKeyboardButton("🏙️ Мои города", callback_data=LIST_CITIES)],
-        [InlineKeyboardButton("🔔 Уведомления (Детально)", callback_data=NOTIFICATION_PREFS)],
-        [InlineKeyboardButton("🌍 Часовой пояс", callback_data=CHANGE_TIMEZONE)],
-        [InlineKeyboardButton("🕐 Время прогноза", callback_data=CHANGE_TIME)],
-        [InlineKeyboardButton("🌡️ Чувствительность", callback_data=CHANGE_SENSITIVITY)],
-        [InlineKeyboardButton("✏️ Изменить имя", callback_data=CHANGE_NAME)],
-        # Global toggle might be redundant if we have detailed prefs, but keep for quick off
-        [InlineKeyboardButton(f"{notif_icon} Вкл/Выкл Все", callback_data=TOGGLE_NOTIFICATIONS)],
+        
+        # Toggles/Settings
+        [InlineKeyboardButton("🌍 Часовой пояс", callback_data=CHANGE_TIMEZONE), 
+         InlineKeyboardButton("🕐 Время", callback_data=CHANGE_TIME)],
+        
+        [InlineKeyboardButton("🌡️ Чувствительность", callback_data=CHANGE_SENSITIVITY),
+         InlineKeyboardButton("✏️ Имя", callback_data=CHANGE_NAME)],
+         
         [InlineKeyboardButton("◀️ Назад в меню", callback_data=BACK_TO_MENU)]
     ]
     return InlineKeyboardMarkup(keyboard)

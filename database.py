@@ -86,6 +86,7 @@ async def init_db():
         # 6. Initialize new features tables
         await create_notification_preferences_table()
         await create_snapshots_table()
+        await create_wardrobe_table()
         
         logger.info("Database initialized and migrated successfully.")
 
@@ -308,12 +309,7 @@ async def update_notification_preference(user_id: int, column: str, value):
         await db.execute(f"UPDATE notification_preferences SET {column} = ? WHERE user_id = ?", (value, user_id))
         await db.commit()
 
-# --- Weather Snapshots for comparison (finer grain than history) ---
-# We can reuse weather_history for daily trends, but for "yesterday this time" 
-# we might need a separate table or just rely on daily avg?
-# User requested "save_weather_snapshot". Let's create a table for hourly snapshots?
-# Or just a simple table to store "last 24-48 hours" of snapshots?
-# Let's create a 'weather_snapshots' table.
+# --- Weather Snapshots ---
 
 async def create_snapshots_table():
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -345,16 +341,9 @@ async def save_weather_snapshot(user_id, city, temp, condition):
         await db.commit()
 
 async def get_weather_comparison(user_id, city):
-    """
-    Returns data to compare current (assumed just fetched) with ~24h ago.
-    Actually returns the snapshot from ~24 hours ago.
-    """
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         # Find snapshot closest to 24h ago
-        # 24h ago is datetime('now', '-1 day')
-        # We look for a record between 23h and 25h ago?
-        # Or just the single closest record within reason.
         query = """
             SELECT * FROM weather_snapshots 
             WHERE user_id = ? AND city_name = ? 
@@ -366,6 +355,51 @@ async def get_weather_comparison(user_id, city):
             row = await cursor.fetchone()
             return dict(row) if row else None
 
-async def get_weekly_temperature_trend(user_id, city):
-    # Uses weather_history
-    return await get_weekly_stats(user_id, city)
+# --- Wardrobe & AI ---
+
+async def create_wardrobe_table():
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS wardrobe (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                photo_file_id TEXT NOT NULL,
+                clothing_type TEXT,
+                material TEXT,
+                warmth_level TEXT,
+                suitable_temp_min INTEGER,
+                suitable_temp_max INTEGER,
+                style TEXT,
+                description TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        """)
+        await db.commit()
+
+async def save_wardrobe_item(user_id: int, photo_id: str, data: dict):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("""
+            INSERT INTO wardrobe 
+            (user_id, photo_file_id, clothing_type, material, warmth_level, suitable_temp_min, suitable_temp_max, style, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, photo_id, data.get('clothing_type'), data.get('material'), data.get('warmth_level'),
+              data.get('suitable_temp_min'), data.get('suitable_temp_max'), data.get('style'), data.get('description')))
+        await db.commit()
+
+async def get_user_wardrobe(user_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM wardrobe WHERE user_id = ? ORDER BY added_at DESC", (user_id,)) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+async def get_users_with_null_timezone():
+    """
+    Get only users with explicitly NULL timezone (brand new users)
+    NOT users with 'Europe/Moscow' or any other set timezone
+    """
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute("SELECT user_id FROM users WHERE timezone IS NULL AND timezone_initialized = 0") as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]

@@ -10,14 +10,15 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, GEMINI_API_KEY
 from database import (
     init_db, upsert_user, get_user, update_user_field, 
     add_city, get_user_cities, remove_city, set_primary_city, 
     get_primary_city, get_weekly_stats, 
     update_user_timezone, get_users_needing_timezone_init, mark_timezone_initialized,
     get_notification_preferences, update_notification_preference, 
-    save_weather_snapshot, get_weather_comparison, create_snapshots_table
+    save_weather_snapshot, get_weather_comparison, create_snapshots_table,
+    save_wardrobe_item, get_users_with_null_timezone, create_wardrobe_table
 )
 from weather import get_coordinates, get_current_weather, get_forecast, get_uv_index, get_air_quality
 from scheduler import setup_scheduler
@@ -27,14 +28,17 @@ from analytics import (
     get_smart_insight
 )
 from recommendations import get_weather_emoji, get_clothing_advice
+from ai_analysis import init_gemini, analyze_clothing_photo, generate_clothing_recommendation
+
 from keyboards import (
     get_main_menu_keyboard, get_settings_keyboard, get_cities_keyboard,
     get_sensitivity_keyboard, get_time_keyboard, get_back_keyboard,
     get_weather_action_buttons, get_notification_settings_keyboard,
+    get_photo_analysis_buttons,
     WEATHER_NOW, SETTINGS, STATS, HELP, BACK_TO_MENU,
     CHANGE_CITY, LIST_CITIES, ADD_CITY, REMOVE_CITY,
     CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME, CHANGE_TIMEZONE,
-    TOGGLE_NOTIFICATIONS, TOGGLE_ALERTS, NOTIFICATION_PREFS,
+    TOGGLE_NOTIFICATIONS, NOTIFICATION_PREFS,
     REFRESH_WEATHER, WEATHER_DETAILS, WEATHER_STATS,
     SENSITIVITY_COLD, SENSITIVITY_NORMAL, SENSITIVITY_HOT
 )
@@ -73,17 +77,12 @@ async def generate_weather_message_content(user_id, city_data):
 
     # 2. Comparison
     comp_text = ""
-    # Try get comparison
-    # We would need to save snapshot FIRST if we want "yesterday".
-    # But usually we save snapshot after generating message or periodically.
-    # Let's assume we have data.
     comp_data = await get_weather_comparison(user_id, city_name)
     if comp_data:
         comp_text = generate_comparison_text(current['main']['temp'], comp_data['temp'])
         comp_text = f"<i>{comp_text}</i>"
     
-    # Save NEW snapshot for yesterday/tomorrow check
-    # Note: If we save every time user checks, we get frequent snapshots.
+    # Save NEW snapshot
     try:
         await save_weather_snapshot(user_id, city_name, current['main']['temp'], current['weather'][0]['description'])
     except: pass
@@ -92,7 +91,6 @@ async def generate_weather_message_content(user_id, city_data):
     temp = current['main']['temp']
     feels = current['main']['feels_like']
     cond = current['weather'][0]['description']
-    # Capitalize condition
     cond = cond.capitalize()
     emoji_icon = get_weather_emoji(current['weather'][0]['id'])
     
@@ -103,18 +101,13 @@ async def generate_weather_message_content(user_id, city_data):
     uv_msg = f"☀️ <b>УФ-индекс:</b> {uv}"
     
     # Hourly & Forecast (simplified view)
-    # Get Morning/Day/Evening from forecast list
-    # Use recommendations.py logic logic or custom
     list_data = forecast.get('list', [])
-    
     forecast_text = "<b>📅 Прогноз на день:</b>\n"
     periods = [("09:00", "🌅 Утро"), ("15:00", "☀️ День"), ("21:00", "🌇 Вечер")]
     found_p = False
     
     for time_target, label in periods:
-        # Find closest
         for item in list_data:
-            # item['dt_txt'] format is "2024-01-01 09:00:00"
             t = item['dt_txt'].split(' ')[1][:5]
             if t == time_target:
                 p_temp = item['main']['temp']
@@ -130,8 +123,6 @@ async def generate_weather_message_content(user_id, city_data):
     # Recommendations
     sens = user.get('temperature_sensitivity', 'normal')
     name = user.get('user_name', 'друг')
-    
-    # Use helper but strip formatting if needed or adapt
     clothing = get_clothing_advice(temp, current['weather'][0]['id'], wind/3.6, sens, name)
     rec_text = f"<b>👔 Рекомендации:</b>\n{clothing.replace(f'{name}, советую: ', '')}"
     
@@ -231,7 +222,7 @@ async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await add_city(user.id, city_name, lat, lon, is_primary=True)
     
     await msg.reply_text(
-        f"✅ Настройка завершена!\nЯ буду присылать прогнозы в 07:00.",
+        f"✅ Настройка завершена!\nЯ буду присылать прогнозы в 07:00.\n\n📸 Отправьте мне фото одежды, чтобы узнать, подходит ли она на сегодня!",
         reply_markup=get_main_menu_keyboard()
     )
     return ConversationHandler.END
@@ -239,6 +230,50 @@ async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отменено.", reply_markup=get_main_menu_keyboard())
     return ConversationHandler.END
+
+# --- PHOTO HANDLER ---
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user = await get_user(user_id)
+    if not user:
+        await update.message.reply_text("Сначала нажмите /start")
+        return
+
+    loading_msg = await update.message.reply_text("📸 Анализирую одежду... ⏳")
+    
+    try:
+        photo = update.message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await file.download_as_bytearray()
+        
+        clothing_data = await analyze_clothing_photo(bytes(photo_bytes))
+        
+        if not clothing_data.get('success'):
+            await loading_msg.edit_text("❌ Не удалось проанализировать фото.")
+            return
+
+        # Get weather
+        city = await get_primary_city(user_id)
+        if not city:
+             await loading_msg.edit_text("❌ Нет города. Настройте город в меню.")
+             return
+             
+        current = await get_current_weather(city['latitude'], city['longitude'])
+        
+        message = generate_clothing_recommendation(clothing_data, current, user['user_name'])
+        
+        await loading_msg.edit_text(
+            message,
+            reply_markup=get_photo_analysis_buttons(photo.file_id),
+            parse_mode='HTML'
+        )
+        
+        # Cache data temporarily for saving? 
+        context.user_data[f"clothing_{photo.file_id}"] = clothing_data
+
+    except Exception as e:
+        logger.error(f"Error handling photo: {e}")
+        await loading_msg.edit_text("❌ Ошибка сервиса. Попробуйте позже.")
 
 # --- MENUS ---
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,11 +285,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == WEATHER_NOW or data == REFRESH_WEATHER:
         city = await get_primary_city(user_id)
         msg = await generate_weather_message_content(user_id, city)
-        if data == REFRESH_WEATHER: # Edit existing
-             try:
-                 await query.edit_message_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
-             except: pass 
-        else: # Send new
+        try:
+             await query.edit_message_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
+        except:
              await query.message.reply_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
 
     elif data == WEATHER_DETAILS:
@@ -263,7 +296,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rec = format_uv_recommendation(uv)
         await query.message.reply_text(f"📊 <b>Подробности</b>\n\n{rec}", parse_mode='HTML')
 
-    elif data == WEATHER_STATS:
+    elif data == WEATHER_STATS or data == STATS:
         await show_stats(query, user_id)
 
     elif data == SETTINGS:
@@ -279,18 +312,16 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prefs = await get_notification_preferences(user_id)
         curr = prefs.get(key, 1)
         await update_notification_preference(user_id, key, not curr)
-        # Refresh
         prefs = await get_notification_preferences(user_id)
         await query.edit_message_reply_markup(reply_markup=get_notification_settings_keyboard(prefs))
 
     elif data == HELP:
-        await query.edit_message_text("ℹ️ <b>Помощь</b>", reply_markup=get_back_keyboard(), parse_mode='HTML')
+        await query.edit_message_text("ℹ️ <b>Помощь</b>\n\nПросто отправьте фото одежды для анализа!", reply_markup=get_back_keyboard(), parse_mode='HTML')
 
     elif data == BACK_TO_MENU:
         try:
             await query.edit_message_text("📱 <b>Главное меню</b>", reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
         except:
-             # If message is too old or content same
              await query.message.reply_text("📱 <b>Главное меню</b>", reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
 
     elif data == LIST_CITIES:
@@ -309,7 +340,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['state'] = 'WAITING_CITY'
 
     elif data == REMOVE_CITY:
-        await query.answer("Нажмите на город...") # Simplified
+        await query.answer("Нажмите на город...") 
 
     elif data == CHANGE_TIMEZONE:
         await query.edit_message_text("🌍 Выберите:", reply_markup=get_timezone_keyboard())
@@ -352,6 +383,18 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Введите имя:")
         context.user_data['state'] = 'WAITING_NAME'
 
+    elif data.startswith("save_clothing_"):
+        fid = data.replace("save_clothing_", "")
+        c_data = context.user_data.get(f"clothing_{fid}")
+        if c_data:
+            await save_wardrobe_item(user_id, fid, c_data)
+            await query.answer("✅ Сохранено в гардероб!")
+        else:
+            await query.answer("❌ Данные устарели")
+            
+    elif data == "analyze_again":
+        await query.message.reply_text("📸 Отправьте новое фото.")
+
 async def show_stats(query, user_id):
     city = await get_primary_city(user_id)
     if not city: return
@@ -391,12 +434,26 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())
 
 async def post_init(application: ApplicationBuilder):
+    """
+    Initialize database and run one-time migrations
+    DO NOT re-prompt users for timezone on every restart
+    """
     await init_db()
-    users = await get_users_needing_timezone_init()
-    for uid in users:
+    
+    # Init Gemini
+    init_gemini(GEMINI_API_KEY)
+
+    # Only initialize timezone for truly new users or users with NULL timezone
+    users_needing_tz = await get_users_with_null_timezone()
+    
+    for user_id in users_needing_tz:
         try:
-            await application.bot.send_message(uid, "🌍 Пожалуйста, выберите часовой пояс:", reply_markup=get_timezone_keyboard())
-            await mark_timezone_initialized(uid)
+            await application.bot.send_message(
+                user_id,
+                "🌍 Пожалуйста, выберите ваш часовой пояс:",
+                reply_markup=get_timezone_keyboard()
+            )
+            await mark_timezone_initialized(user_id)
         except: pass
 
 def main():
@@ -421,6 +478,7 @@ def main():
     application.add_handler(conv)
     application.add_handler(CommandHandler("menu", lambda u,c: u.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())))
     application.add_handler(CallbackQueryHandler(menu_handler))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
 
     print("Bot running...")
