@@ -338,3 +338,50 @@
 2026-01-28 10:37:34,904 - telegram.ext.Application - INFO - Application is stopping. This might take a moment.
 2026-01-28 10:37:34,906 - apscheduler.scheduler - INFO - Scheduler has been shut down
 2026-01-28 10:37:34,906 - telegram.ext.Application - INFO - Application.stop() complete
+2026-02-06 12:42:20,319 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-02-06 12:42:20,319 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-02-06 12:42:20,319 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-02-06 12:42:20,320 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-02-06 12:42:20,320 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-02-06 12:42:20,320 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-02-06 12:42:20,751 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot%D1%82%D0%BE%D0%BA%D0%B5%D0%BD%20%D1%81%D1%8E%D0%B4%D0%B0/getMe "HTTP/1.1 404 Not Found"
+2026-02-06 12:42:20,751 - telegram.ext - ERROR - Network Retry Loop (Bootstrap Initialize Application): Invalid token. Aborting retry loop.
+Traceback (most recent call last):
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\_bot.py", line 856, in initialize
+    await self.get_me()
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\ext\_extbot.py", line 2007, in get_me
+    return await super().get_me(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\_bot.py", line 989, in get_me
+    result = await self._post(
+             ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\_bot.py", line 703, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\ext\_extbot.py", line 369, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\_bot.py", line 732, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\request\_baserequest.py", line 198, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\request\_baserequest.py", line 375, in _request_wrapper
+    raise exception
+telegram.error.InvalidToken: Not Found
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\ext\_utils\networkloop.py", line 161, in network_retry_loop
+    await do_action()
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\ext\_utils\networkloop.py", line 136, in do_action
+    await action_cb()
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\ext\_application.py", line 489, in initialize
+    await self.bot.initialize()
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\ext\_extbot.py", line 315, in initialize
+    await super().initialize()
+  File "C:\Users\Тимур\AppData\Local\Programs\Python\Python311\Lib\site-packages\telegram\_bot.py", line 859, in initialize
+    raise InvalidToken(f"The token `{self._token}` was rejected by the server.") from exc
+telegram.error.InvalidToken: The token `токен сюда` was rejected by the server.
