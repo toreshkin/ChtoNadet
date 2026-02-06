@@ -14,7 +14,8 @@ from config import TELEGRAM_BOT_TOKEN
 from database import (
     init_db, upsert_user, get_user, update_user_field, 
     add_city, get_user_cities, remove_city, set_primary_city, 
-    get_primary_city, get_weekly_stats
+    get_primary_city, get_weekly_stats, 
+    update_user_timezone, get_users_needing_timezone_init, mark_timezone_initialized
 )
 from weather import get_coordinates, get_current_weather, get_forecast
 from recommendations import format_daily_forecast, get_weather_emoji
@@ -24,9 +25,13 @@ from keyboards import (
     get_sensitivity_keyboard, get_time_keyboard, get_back_keyboard,
     WEATHER_NOW, SETTINGS, STATS, HELP, BACK_TO_MENU,
     CHANGE_CITY, LIST_CITIES, ADD_CITY, REMOVE_CITY,
-    CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME, 
+    CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME, CHANGE_TIMEZONE,
     TOGGLE_NOTIFICATIONS, TOGGLE_ALERTS, 
     SENSITIVITY_COLD, SENSITIVITY_NORMAL, SENSITIVITY_HOT
+)
+from timezones import (
+    get_timezone_keyboard, get_extended_timezone_keyboard, get_timezone_display_name,
+    TIMEZONE_PREFIX, TIMEZONE_OTHER, COMMON_TIMEZONES
 )
 
 logging.basicConfig(
@@ -36,7 +41,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # States for Conversation
-ASK_NAME, ASK_LOCATION = range(2)
+ASK_NAME, ASK_TIMEZONE, ASK_LOCATION = range(3)
 ADD_CITY_NAME = range(1)
 CUSTOM_TIME = range(1)
 INPUT_NAME = range(1)
@@ -53,8 +58,41 @@ async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_NAME
     
     context.user_data['temp_name'] = name
-    await update.message.reply_text(f"Приятно познакомиться, {name}! 😊\nТеперь отправьте свою геолокацию или напишите название города.")
-    return ASK_LOCATION
+    await update.message.reply_text(
+        f"Приятно познакомиться, {name}! 😊\n\n🌍 Теперь выберите ваш часовой пояс, чтобы я присылал уведомления вовремя:",
+        reply_markup=get_timezone_keyboard()
+    )
+    return ASK_TIMEZONE
+
+async def ask_timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data == TIMEZONE_OTHER:
+        await query.edit_message_text(
+            "🌎 Выберите регион из списка ниже:",
+            reply_markup=get_extended_timezone_keyboard()
+        )
+        return ASK_TIMEZONE
+        
+    if data == "TZ_BACK_MAIN":
+        await query.edit_message_text(
+            "🌍 Выберите ваш часовой пояс:",
+            reply_markup=get_timezone_keyboard()
+        )
+        return ASK_TIMEZONE
+        
+    if data.startswith(TIMEZONE_PREFIX):
+        timezone = data.replace(TIMEZONE_PREFIX, "")
+        context.user_data['temp_timezone'] = timezone
+        
+        display_name = get_timezone_display_name(timezone)
+        await query.edit_message_text(f"✅ Выбран часовой пояс: {display_name}")
+        await query.message.reply_text("📍 Теперь отправьте свою геолокацию или напишите название города.")
+        return ASK_LOCATION
+    
+    return ASK_TIMEZONE
 
 async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -80,9 +118,10 @@ async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lat, lon = coords
     
     name = context.user_data.get('temp_name', 'друг')
+    timezone = context.user_data.get('temp_timezone', 'Europe/Moscow')
     
     # Register/Update user
-    await upsert_user(user.id, user.username, user_name=name)
+    await upsert_user(user.id, user.username, user_name=name, timezone=timezone)
     
     # Add city
     await add_city(user.id, city_name, lat, lon, is_primary=True)
@@ -131,6 +170,33 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         primary_id = next((c['id'] for c in cities if c['is_primary']), -1)
         await query.edit_message_text("🏙️ <b>Ваши города</b>\nНажмите на город, чтобы сделать его основным.", reply_markup=get_cities_keyboard(cities, primary_id), parse_mode='HTML')
     
+    elif data == CHANGE_TIMEZONE:
+        user = await get_user(user_id)
+        current_tz = user.get('timezone', 'Europe/Moscow')
+        display = get_timezone_display_name(current_tz)
+        await query.edit_message_text(f"🌍 Текущий: {display}\nВыберите новый часовой пояс:", reply_markup=get_timezone_keyboard())
+
+    elif data == TIMEZONE_OTHER:
+         await query.edit_message_text("🌎 Выберите регион:", reply_markup=get_extended_timezone_keyboard())
+
+    elif data == "TZ_BACK_MAIN":
+         await query.edit_message_text("🌍 Выберите ваш часовой пояс:", reply_markup=get_timezone_keyboard())
+
+    elif data.startswith(TIMEZONE_PREFIX):
+        new_tz = data.replace(TIMEZONE_PREFIX, "")
+        await update_user_timezone(user_id, new_tz)
+        display = get_timezone_display_name(new_tz)
+        
+        # Get user settings to return to keyboard
+        user = await get_user(user_id)
+        
+        await query.answer(f"✅ Часовой пояс изменен на {display}")
+        await query.edit_message_text(
+             f"✅ Часовой пояс изменен на {display}\n\n⚙️ <b>Настройки</b>",
+             reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']),
+             parse_mode='HTML'
+        )
+
     elif data == CHANGE_TIME:
         await query.edit_message_text("🕐 Выберите время получения уведомлений:", reply_markup=get_time_keyboard())
     
@@ -294,6 +360,22 @@ async def detailed_callback_handler(update: Update, context: ContextTypes.DEFAUL
 
 async def post_init(application: ApplicationBuilder):
     await init_db()
+    
+    # Timezone migration broadcast
+    users_to_init = await get_users_needing_timezone_init()
+    if users_to_init:
+        logger.info(f"Sending timezone init message to {len(users_to_init)} users...")
+        for uid in users_to_init:
+            try:
+                await application.bot.send_message(
+                    uid,
+                    "🕐 <b>Обновление бота!</b>\n\nТеперь вы можете выбрать свой часовой пояс для точного времени уведомлений.\nПожалуйста, выберите ваш часовой пояс:",
+                    reply_markup=get_timezone_keyboard(),
+                    parse_mode='HTML'
+                )
+                await mark_timezone_initialized(uid)
+            except Exception as e:
+                logger.error(f"Failed to send timezone init to {uid}: {e}")
 
 def main():
     if not TELEGRAM_BOT_TOKEN:
@@ -307,6 +389,7 @@ def main():
         entry_points=[CommandHandler('start', start)],
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
+            ASK_TIMEZONE: [CallbackQueryHandler(ask_timezone_handler)],
             ASK_LOCATION: [MessageHandler(filters.TEXT | filters.LOCATION, ask_location)],
         },
         fallbacks=[CommandHandler('cancel', cancel)]

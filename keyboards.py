@@ -14,6 +14,7 @@ REMOVE_CITY = "remove_city"
 CHANGE_TIME = "change_time"
 CHANGE_SENSITIVITY = "change_sensitivity"
 CHANGE_NAME = "change_name"
+CHANGE_TIMEZONE = "change_timezone"
 TOGGLE_NOTIFICATIONS = "toggle_notif"
 TOGGLE_ALERTS = "toggle_alerts"
 BACK_TO_MENU = "back_menu"
@@ -36,6 +37,7 @@ def get_settings_keyboard(notifications_on=True, alerts_on=True):
     
     keyboard = [
         [InlineKeyboardButton("🏙️ Мои города", callback_data=LIST_CITIES)],
+        [InlineKeyboardButton("🌍 Часовой пояс", callback_data=CHANGE_TIMEZONE)],
         [InlineKeyboardButton("🕐 Время уведомлений", callback_data=CHANGE_TIME)],
         [InlineKeyboardButton("🌡️ Чувствительность", callback_data=CHANGE_SENSITIVITY)],
         [InlineKeyboardButton("✏️ Изменить имя", callback_data=CHANGE_NAME)],

@@ -54,8 +54,8 @@ async def send_daily_notifications(context: ContextTypes.DEFAULT_TYPE):
                     user_tz = pytz.timezone(timezone_str)
                     user_local_time = utc_now.astimezone(user_tz)
                 except Exception:
-                    user_tz = pytz.utc
-                    user_local_time = utc_now
+                    user_tz = pytz.timezone('Europe/Moscow')
+                    user_local_time = utc_now.astimezone(user_tz)
 
                 if user_local_time.strftime("%H:%M") != pref_time_str:
                     continue

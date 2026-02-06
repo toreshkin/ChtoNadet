@@ -35,6 +35,16 @@ async def init_db():
         except Exception:
             pass # Column likely exists
 
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN timezone TEXT DEFAULT 'Europe/Moscow'")
+        except Exception:
+            pass # Column likely exists
+            
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN timezone_initialized BOOLEAN DEFAULT 0")
+        except Exception:
+            pass # Column likely exists
+
         # 3. Create 'cities' table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS cities (
@@ -133,8 +143,25 @@ async def get_all_active_users():
             return [dict(row) for row in rows]
 
 async def update_last_notification(user_id: int):
-    async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute("UPDATE users SET last_notification = CURRENT_TIMESTAMP WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+async def update_user_timezone(user_id: int, timezone: str):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("UPDATE users SET timezone = ?, timezone_initialized = 1 WHERE user_id = ?", (timezone, user_id))
+        await db.commit()
+
+async def get_users_needing_timezone_init():
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # check for users who haven't initialized timezone or have null timezone
+        async with db.execute("SELECT user_id FROM users WHERE timezone_initialized = 0 OR timezone IS NULL") as cursor:
+            rows = await cursor.fetchall()
+            return [row['user_id'] for row in rows]
+
+async def mark_timezone_initialized(user_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("UPDATE users SET timezone_initialized = 1 WHERE user_id = ?", (user_id,))
         await db.commit()
 
 # --- City Management ---
