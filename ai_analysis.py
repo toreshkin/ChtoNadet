@@ -18,9 +18,10 @@ def init_gemini(api_key: str):
     
     # Log available models
     try:
+        logger.info("Listing available Gemini models:")
         for model in genai.list_models():
             if 'generateContent' in model.supported_generation_methods:
-                logger.info(f"Available Gemini model: {model.name}")
+                logger.info(f"Available: {model.name}")
     except Exception as e:
         logger.error(f"Could not list models: {e}")
 
@@ -58,12 +59,10 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     """
 
     # List of models to try in order
-    # Using 'latest' aliases where appropriate or strictly known working models
+    # Using explicit model IDs with 'models/' prefix and version suffix for v1beta API stability
     candidates = [
-        'gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-pro',
-        'gemini-1.5-pro-latest',
+        'models/gemini-1.5-flash-001',
+        'models/gemini-1.5-pro-001',
     ]
 
     last_error = None
@@ -125,12 +124,10 @@ async def analyze_clothing_text(text_description: str) -> Dict:
     }}
     """
 
-    # Updated model list with latest aliases
+    # Updated model list with explicit model IDs for v1beta API stability
     candidates = [
-        'gemini-1.5-flash',
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-pro',
-        'gemini-1.5-pro-latest',
+        'models/gemini-1.5-flash-001',
+        'models/gemini-1.5-pro-001',
     ]
     last_error = None
     
