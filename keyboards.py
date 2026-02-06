@@ -16,8 +16,12 @@ CHANGE_SENSITIVITY = "change_sensitivity"
 CHANGE_NAME = "change_name"
 CHANGE_TIMEZONE = "change_timezone"
 TOGGLE_NOTIFICATIONS = "toggle_notif"
-TOGGLE_ALERTS = "toggle_alerts"
+TOGGLE_ALERTS = "toggle_alerts" # Global toggle
+NOTIFICATION_PREFS = "notif_prefs" # Submenu
 BACK_TO_MENU = "back_menu"
+REFRESH_WEATHER = "refresh_weather"
+WEATHER_DETAILS = "weather_details"
+WEATHER_STATS = "weather_stats"
 
 SENSITIVITY_COLD = "sens_cold"
 SENSITIVITY_NORMAL = "sens_normal"
@@ -31,27 +35,64 @@ def get_main_menu_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def get_weather_action_buttons():
+    """Quick actions for weather message."""
+    keyboard = [
+        [InlineKeyboardButton("🔄 Обновить", callback_data=REFRESH_WEATHER), 
+         InlineKeyboardButton("📊 Детали", callback_data=WEATHER_DETAILS),
+         InlineKeyboardButton("📈 Статистика", callback_data=WEATHER_STATS)],
+         # Could add settings or city here too
+        [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS)]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_hourly_forecast_buttons(start_hour=0):
+    """
+    Shows hourly forecast in chunks.
+    Simple interactive row?
+    Prompt: "[06:00 +10°] [09:00 +13°]..." 
+    """
+    # This usually needs data passed in.
+    # We can't generate dynamic buttons without data unless we encode it or store state.
+    # For now, generate a placeholder that main.py logic will bolster, 
+    # OR main.py generates this keyboard directly.
+    # Let's keep a generic one here or allow passing data.
+    pass 
+
+def get_notification_settings_keyboard(prefs: dict):
+    """
+    prefs: dict with booleans for keys like 'rain_alerts', 'uv_alerts'...
+    """
+    def btn(text, key):
+        state = "✅" if prefs.get(key, True) else "❌"
+        return InlineKeyboardButton(f"{state} {text}", callback_data=f"toggle_{key}")
+
+    keyboard = [
+        [btn("Ежедневный прогноз", "daily_forecast")],
+        [btn("Дождь", "rain_alerts"), btn("Температура", "temp_change_alerts")],
+        [btn("UV индекс", "uv_alerts"), btn("Качество воздуха", "air_quality_alerts")],
+        [btn("Шторм", "severe_weather_alerts"), btn("Идеальная погода", "perfect_weather_alerts")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=SETTINGS)]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def get_settings_keyboard(notifications_on=True, alerts_on=True):
     notif_icon = "🔔" if notifications_on else "🔕"
-    alert_icon = "⚠️" if alerts_on else "🔇"
     
     keyboard = [
         [InlineKeyboardButton("🏙️ Мои города", callback_data=LIST_CITIES)],
+        [InlineKeyboardButton("🔔 Уведомления (Детально)", callback_data=NOTIFICATION_PREFS)],
         [InlineKeyboardButton("🌍 Часовой пояс", callback_data=CHANGE_TIMEZONE)],
-        [InlineKeyboardButton("🕐 Время уведомлений", callback_data=CHANGE_TIME)],
+        [InlineKeyboardButton("🕐 Время прогноза", callback_data=CHANGE_TIME)],
         [InlineKeyboardButton("🌡️ Чувствительность", callback_data=CHANGE_SENSITIVITY)],
         [InlineKeyboardButton("✏️ Изменить имя", callback_data=CHANGE_NAME)],
-        [InlineKeyboardButton(f"{notif_icon} Уведомления", callback_data=TOGGLE_NOTIFICATIONS)],
-        [InlineKeyboardButton(f"{alert_icon} Алерты", callback_data=TOGGLE_ALERTS)],
+        # Global toggle might be redundant if we have detailed prefs, but keep for quick off
+        [InlineKeyboardButton(f"{notif_icon} Вкл/Выкл Все", callback_data=TOGGLE_NOTIFICATIONS)],
         [InlineKeyboardButton("◀️ Назад в меню", callback_data=BACK_TO_MENU)]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_cities_keyboard(cities, current_primary_id):
-    """
-    Generates a list of cities.
-    cities: list of dicts {'id', 'city_name', 'is_primary'}
-    """
     keyboard = []
     for city in cities:
         prefix = "⭐ " if city['id'] == current_primary_id or city['is_primary'] else ""

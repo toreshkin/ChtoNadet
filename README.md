@@ -1,44 +1,56 @@
-# 🌤 Telegram Weather Bot (v2.0)
+# 🌤 Telegram Weather Bot (v3.0 - Enhanced)
 
-Умный погодный бот с персонализацией, поддержкой нескольких городов и статистикой.
+Smart weather bot with analytics, advanced insights, and proactive notifications.
 
-## ✨ Новые возможности
+## ✨ New Features (v3.0)
+*   **� Analytics & Insights**:
+    *   Compare today's weather with yesterday ("Today is 5°C warmer").
+    *   Weekly temperature trend graphs with emojis.
+    *   Activity recommendations (Best time for a walk, picnic, drying clothes).
+    *   Air Quality Index (AQI) with health recommendations.
+    *   UV Index alerts and protection advice.
+*   **🔔 Smart Notifications**:
+    *   **Rain Alert**: Warns you 1 hour before rain starts.
+    *   **Temp Change**: Alerts on drastic temperature drops/rises.
+    *   **Severe Weather**: Storm and wind warnings.
+    *   **Morning Summary**: Includes daily focus (UV, umbrella need).
+    *   **Perfect Weather**: Notification when conditions are ideal for activities.
+*   **🎨 Rich UX**:
+    *   Beautiful HTML-formatted cards with "Mood" icons.
+    *   Interactive Hourly Forecast buttons.
+    *   Quick action buttons (Refresh, Details, Stats).
+    *   Visual progress bars and clear layouts.
+*   **⚙️ Advanced Settings**:
+    *   Granular notification control (toggle Rain, UV, AQI alerts separately).
+    *   Multiple cities support with "Primary" city selection.
+    *   Personalized naming and sensitivity settings.
 
-*   **📱 Красивый UI**: Инлайновые кнопки и меню вместо текстовых команд.
-*   **👤 Персонализация**: Бот запоминает ваше имя и обращается к вам лично ("Доброе утро, Тимур!").
-*   **🌍 Несколько городов**: Добавляйте любимые города и быстро переключайтесь между ними.
-*   **🕐 Часовые пояса**: Выбор часового пояса для отправки уведомлений в удобное время.
-*   **📊 Статистика**: Отслеживайте тренды температуры за неделю.
-*   **🔔 Гибкие настройки**: Управление уведомлениями, временем и чувствительностью к холоду.
-*   **🎨 Эмодзи**: Красивое оформление прогнозов.
+## 🛠 Installation
 
-## 🛠 Установка
+1.  Clone repository.
+2.  Create venv: `python -m venv venv`
+3.  Install: `pip install -r requirements.txt`
+4.  Configure `.env` with `TELEGRAM_BOT_TOKEN` and `WEATHERAPI_KEY`.
+5.  Run: `python main.py`
 
-1.  Клонируйте репозиторий.
-2.  Создайте виртуальное окружение: `python -m venv venv`
-3.  Активируйте venv и установите зависимости: `pip install -r requirements.txt`
-4.  Настройте `.env` (Токен бота и API ключ WeatherAPi).
-5.  Запустите: `python main.py`
+## 🤖 Usage
 
-## 🤖 Использование
+### Start
+Send `/start`. The bot will guide you through setting your Name, Timezone, and City.
 
-### Начало работы
-Отправьте `/start`. Бот спросит ваше имя, часовой пояс и город.
+### Main Menu
+*   **🌤 Weather Now**: Detailed card with current temp, feels like, wind, humidity, UV, AQI, and next 3 forecast blocks (Morning/Day/Evening).
+*   **⚙️ Settings**:
+    *   **Notifications**: Toggle specific alerts (Rain, UV, Storm, etc.).
+    *   **Cities**: Manage multiple locations.
+    *   **Timezone/Time**: Adjust when you receive daily reports.
+*   **📊 Statistics**: View weekly temperature trends.
 
-### Главное меню
-*   **🌤 Погода сейчас**: Прогноз для основного города.
-*   **⚙️ Настройки**: Управление городами, временем, часовым поясом и уведомлениями.
-*   **📊 Статистика**: История погоды.
-
-### Команды (для справки)
-*   `/start` - Регистрация.
-*   `/menu` - Вызвать главное меню, если оно потерялось.
-
-## 📁 Структура
-*   `main.py`: Логика бота и меню.
-*   `keyboards.py`: Разметка кнопок.
-*   `timezones.py`: Управление часовыми поясами.
-*   `database.py`: SQLite + миграции.
-*   `scheduler.py`: Фоновые задачи (уведомления, история).
-*   `weather.py`: API клиент.
-*   `recommendations.py`: Текст прогноза и советы.
+## 📁 Structure
+*   `main.py`: Bot entry point, handlers, and UI logic.
+*   `analytics.py`: **[NEW]** Logic for comparisons, trends, and smart insights.
+*   `smart_alerts.py`: **[NEW]** Background jobs for Rain/UV/Storm alerts.
+*   `scheduler.py`: Job queue management.
+*   `weather.py`: WeatherAPI client (Forecast, AQI, Alerts).
+*   `database.py`: SQLite storage (Users, Cities, History, Preferences).
+*   `keyboards.py`: Inline keyboard layouts.

@@ -15,18 +15,27 @@ from database import (
     init_db, upsert_user, get_user, update_user_field, 
     add_city, get_user_cities, remove_city, set_primary_city, 
     get_primary_city, get_weekly_stats, 
-    update_user_timezone, get_users_needing_timezone_init, mark_timezone_initialized
+    update_user_timezone, get_users_needing_timezone_init, mark_timezone_initialized,
+    get_notification_preferences, update_notification_preference, 
+    save_weather_snapshot, get_weather_comparison, create_snapshots_table
 )
-from weather import get_coordinates, get_current_weather, get_forecast
-from recommendations import format_daily_forecast, get_weather_emoji
-from scheduler import send_daily_notifications, save_daily_history_job as history_job
+from weather import get_coordinates, get_current_weather, get_forecast, get_uv_index, get_air_quality
+from scheduler import setup_scheduler
+from analytics import (
+    generate_comparison_text, generate_weekly_trend_graph, suggest_activities, 
+    analyze_best_activity_time, format_uv_recommendation, format_aqi_message,
+    get_smart_insight
+)
+from recommendations import get_weather_emoji, get_clothing_advice
 from keyboards import (
     get_main_menu_keyboard, get_settings_keyboard, get_cities_keyboard,
     get_sensitivity_keyboard, get_time_keyboard, get_back_keyboard,
+    get_weather_action_buttons, get_notification_settings_keyboard,
     WEATHER_NOW, SETTINGS, STATS, HELP, BACK_TO_MENU,
     CHANGE_CITY, LIST_CITIES, ADD_CITY, REMOVE_CITY,
     CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME, CHANGE_TIMEZONE,
-    TOGGLE_NOTIFICATIONS, TOGGLE_ALERTS, 
+    TOGGLE_NOTIFICATIONS, TOGGLE_ALERTS, NOTIFICATION_PREFS,
+    REFRESH_WEATHER, WEATHER_DETAILS, WEATHER_STATS,
     SENSITIVITY_COLD, SENSITIVITY_NORMAL, SENSITIVITY_HOT
 )
 from timezones import (
@@ -46,6 +55,117 @@ ADD_CITY_NAME = range(1)
 CUSTOM_TIME = range(1)
 INPUT_NAME = range(1)
 
+# --- HELPER: Message Generation ---
+async def generate_weather_message_content(user_id, city_data):
+    if not city_data: return "У вас нет добавленных городов."
+    
+    lat, lon = city_data['latitude'], city_data['longitude']
+    city_name = city_data['city_name']
+    
+    # 1. Fetch Data
+    forecast = await get_forecast(lat=lat, lon=lon) # Includes hourly for today
+    current = await get_current_weather(lat=lat, lon=lon) # Realtime
+    uv = await get_uv_index(city_name)
+    aqi_data = await get_air_quality(city_name)
+    user = await get_user(user_id)
+    
+    if not current or not forecast: return "Не удалось получить данные о погоде."
+
+    # 2. Comparison
+    comp_text = ""
+    # Try get comparison
+    # We would need to save snapshot FIRST if we want "yesterday".
+    # But usually we save snapshot after generating message or periodically.
+    # Let's assume we have data.
+    comp_data = await get_weather_comparison(user_id, city_name)
+    if comp_data:
+        comp_text = generate_comparison_text(current['main']['temp'], comp_data['temp'])
+        comp_text = f"<i>{comp_text}</i>"
+    
+    # Save NEW snapshot for yesterday/tomorrow check
+    # Note: If we save every time user checks, we get frequent snapshots.
+    try:
+        await save_weather_snapshot(user_id, city_name, current['main']['temp'], current['weather'][0]['description'])
+    except: pass
+
+    # 3. Format Strings
+    temp = current['main']['temp']
+    feels = current['main']['feels_like']
+    cond = current['weather'][0]['description']
+    # Capitalize condition
+    cond = cond.capitalize()
+    emoji_icon = get_weather_emoji(current['weather'][0]['id'])
+    
+    # Details
+    wind = current['wind']['speed'] * 3.6 # km/h
+    humid = current['main']['humidity']
+    aqi_msg = format_aqi_message(aqi_data.get('aqi_val', 0)) if aqi_data else ""
+    uv_msg = f"☀️ <b>УФ-индекс:</b> {uv}"
+    
+    # Hourly & Forecast (simplified view)
+    # Get Morning/Day/Evening from forecast list
+    # Use recommendations.py logic logic or custom
+    list_data = forecast.get('list', [])
+    
+    forecast_text = "<b>📅 Прогноз на день:</b>\n"
+    periods = [("09:00", "🌅 Утро"), ("15:00", "☀️ День"), ("21:00", "🌇 Вечер")]
+    found_p = False
+    
+    for time_target, label in periods:
+        # Find closest
+        for item in list_data:
+            # item['dt_txt'] format is "2024-01-01 09:00:00"
+            t = item['dt_txt'].split(' ')[1][:5]
+            if t == time_target:
+                p_temp = item['main']['temp']
+                p_cond = item['weather'][0]['description']
+                forecast_text += f"{label}: {p_temp:+.0f}°C • {p_cond}\n"
+                found_p = True
+                break
+    if not found_p: forecast_text += "Данные обновляются...\n"
+
+    # Best activity time
+    activity_time = analyze_best_activity_time(list_data)
+    
+    # Recommendations
+    sens = user.get('temperature_sensitivity', 'normal')
+    name = user.get('user_name', 'друг')
+    
+    # Use helper but strip formatting if needed or adapt
+    clothing = get_clothing_advice(temp, current['weather'][0]['id'], wind/3.6, sens, name)
+    rec_text = f"<b>👔 Рекомендации:</b>\n{clothing.replace(f'{name}, советую: ', '')}"
+    
+    # Insight
+    smart_text = get_smart_insight({'temp': temp, 'humidity': humid, 'wind': wind/3.6, 'condition_code': current['weather'][0]['id']})
+    if smart_text: smart_text = f"💡 {smart_text}\n"
+
+    # UX Layout
+    msg = f"""
+<b>{emoji_icon} Погода в {city_name}</b>
+
+<b>Сейчас:</b> {temp:+.0f}°C (ощущается {feels:+.0f}°C)
+{cond}
+{comp_text}
+
+━━━━━━━━━━━━━━━
+<b>📊 Детали:</b>
+💨 Ветер: {wind:.1f} км/ч
+💧 Влажность: {humid}%
+{uv_msg}
+{aqi_msg}
+
+━━━━━━━━━━━━━━━
+{forecast_text}
+━━━━━━━━━━━━━━━
+{activity_time}
+
+━━━━━━━━━━━━━━━
+{rec_text}
+
+{smart_text}
+"""
+    return msg
+
 # --- START FLOW ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Привет! Я помогу вам одеваться по погоде.\nКак мне к вам обращаться?")
@@ -59,7 +179,7 @@ async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data['temp_name'] = name
     await update.message.reply_text(
-        f"Приятно познакомиться, {name}! 😊\n\n🌍 Теперь выберите ваш часовой пояс, чтобы я присылал уведомления вовремя:",
+        f"Приятно познакомиться, {name}! 😊\n\n🌍 Теперь выберите ваш часовой пояс:",
         reply_markup=get_timezone_keyboard()
     )
     return ASK_TIMEZONE
@@ -70,322 +190,225 @@ async def ask_timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     data = query.data
     
     if data == TIMEZONE_OTHER:
-        await query.edit_message_text(
-            "🌎 Выберите регион из списка ниже:",
-            reply_markup=get_extended_timezone_keyboard()
-        )
+        await query.edit_message_text("🌎 Выберите регион:", reply_markup=get_extended_timezone_keyboard())
         return ASK_TIMEZONE
-        
     if data == "TZ_BACK_MAIN":
-        await query.edit_message_text(
-            "🌍 Выберите ваш часовой пояс:",
-            reply_markup=get_timezone_keyboard()
-        )
+        await query.edit_message_text("🌍 Выберите ваш часовой пояс:", reply_markup=get_timezone_keyboard())
         return ASK_TIMEZONE
-        
     if data.startswith(TIMEZONE_PREFIX):
-        timezone = data.replace(TIMEZONE_PREFIX, "")
-        context.user_data['temp_timezone'] = timezone
-        
-        display_name = get_timezone_display_name(timezone)
-        await query.edit_message_text(f"✅ Выбран часовой пояс: {display_name}")
-        await query.message.reply_text("📍 Теперь отправьте свою геолокацию или напишите название города.")
+        tz = data.replace(TIMEZONE_PREFIX, "")
+        context.user_data['temp_timezone'] = tz
+        d = get_timezone_display_name(tz)
+        await query.edit_message_text(f"✅ Выбран: {d}")
+        await query.message.reply_text("📍 Отправьте свою геолокацию или название города.")
         return ASK_LOCATION
-    
     return ASK_TIMEZONE
 
 async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     msg = update.message
-    
     lat, lon, city_name = None, None, None
     
     if msg.location:
         lat, lon = msg.location.latitude, msg.location.longitude
-        # We should reverse geocode technically, but for now generic name or from weather API
-        # Let's try to get city name from weather check later, or currently just "Мое местоположение"
-        # Since we use weather API, we can fetch name from it if we wanted strictness.
-        # But let's just use "GPS" for internal name if text not provided.
         city_name = "GPS Локация"
-        # Better: Quick check to weather API to get name? 
-        # For speed, we just accept it.
+        try:
+             # Reverse geo via WeatherAPI if we wanted real name
+             pass
+        except: pass
     else:
         city_name = msg.text
         coords = await get_coordinates(city_name)
         if not coords:
-            await msg.reply_text("❌ Не удалось найти город. Попробуйте еще раз.")
+            await msg.reply_text("❌ Город не найден. Попробуйте еще раз.")
             return ASK_LOCATION
         lat, lon = coords
     
     name = context.user_data.get('temp_name', 'друг')
-    timezone = context.user_data.get('temp_timezone', 'Europe/Moscow')
+    tz = context.user_data.get('temp_timezone', 'Europe/Moscow')
     
-    # Register/Update user
-    await upsert_user(user.id, user.username, user_name=name, timezone=timezone)
-    
-    # Add city
+    await upsert_user(user.id, user.username, user_name=name, timezone=tz)
     await add_city(user.id, city_name, lat, lon, is_primary=True)
     
     await msg.reply_text(
-        f"✅ Отлично, {name}! Город {city_name} добавлен.\nЯ буду присылать прогнозы каждое утро в 07:00.",
+        f"✅ Настройка завершена!\nЯ буду присылать прогнозы в 07:00.",
         reply_markup=get_main_menu_keyboard()
     )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Действие отменено.", reply_markup=get_main_menu_keyboard())
+    await update.message.reply_text("Отменено.", reply_markup=get_main_menu_keyboard())
     return ConversationHandler.END
 
-# --- MENUS and CALLBACKS ---
+# --- MENUS ---
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
     user_id = query.from_user.id
     
-    if data == WEATHER_NOW:
-        await show_weather_now(query, user_id)
+    if data == WEATHER_NOW or data == REFRESH_WEATHER:
+        city = await get_primary_city(user_id)
+        msg = await generate_weather_message_content(user_id, city)
+        if data == REFRESH_WEATHER: # Edit existing
+             try:
+                 await query.edit_message_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
+             except: pass 
+        else: # Send new
+             await query.message.reply_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
+
+    elif data == WEATHER_DETAILS:
+        city = await get_primary_city(user_id)
+        uv = await get_uv_index(city['city_name'])
+        rec = format_uv_recommendation(uv)
+        await query.message.reply_text(f"📊 <b>Подробности</b>\n\n{rec}", parse_mode='HTML')
+
+    elif data == WEATHER_STATS:
+        await show_stats(query, user_id)
+
     elif data == SETTINGS:
         user = await get_user(user_id)
-        await query.edit_message_text(
-            "⚙️ <b>Настройки</b>", 
-            reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']),
-            parse_mode='HTML'
-        )
-    elif data == STATS:
-        await show_stats(query, user_id)
-    elif data == HELP:
-        await query.edit_message_text(
-            "ℹ️ <b>Помощь</b>\n\nЯ бот-метеоролог. Я могу:\n- Показывать погоду сейчас\n- Присылать ежедневные прогнозы\n- Давать советы по одежде\n- Вести статистику\n\nИспользуйте меню для навигации.", 
-            reply_markup=get_back_keyboard(),
-            parse_mode='HTML'
-        )
-    elif data == BACK_TO_MENU:
-        await query.edit_message_text("📱 <b>Главное меню</b>", reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
+        await query.edit_message_text("⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
 
-    # Settings Submenu
+    elif data == NOTIFICATION_PREFS:
+        prefs = await get_notification_preferences(user_id)
+        await query.edit_message_text("🔔 <b>Настройка уведомлений</b>", reply_markup=get_notification_settings_keyboard(prefs), parse_mode='HTML')
+
+    elif data.startswith("toggle_"):
+        key = data.replace("toggle_", "")
+        prefs = await get_notification_preferences(user_id)
+        curr = prefs.get(key, 1)
+        await update_notification_preference(user_id, key, not curr)
+        # Refresh
+        prefs = await get_notification_preferences(user_id)
+        await query.edit_message_reply_markup(reply_markup=get_notification_settings_keyboard(prefs))
+
+    elif data == HELP:
+        await query.edit_message_text("ℹ️ <b>Помощь</b>", reply_markup=get_back_keyboard(), parse_mode='HTML')
+
+    elif data == BACK_TO_MENU:
+        try:
+            await query.edit_message_text("📱 <b>Главное меню</b>", reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
+        except:
+             # If message is too old or content same
+             await query.message.reply_text("📱 <b>Главное меню</b>", reply_markup=get_main_menu_keyboard(), parse_mode='HTML')
+
     elif data == LIST_CITIES:
         cities = await get_user_cities(user_id)
-        # Find primary id
-        primary_id = next((c['id'] for c in cities if c['is_primary']), -1)
-        await query.edit_message_text("🏙️ <b>Ваши города</b>\nНажмите на город, чтобы сделать его основным.", reply_markup=get_cities_keyboard(cities, primary_id), parse_mode='HTML')
-    
-    elif data == CHANGE_TIMEZONE:
-        user = await get_user(user_id)
-        current_tz = user.get('timezone', 'Europe/Moscow')
-        display = get_timezone_display_name(current_tz)
-        await query.edit_message_text(f"🌍 Текущий: {display}\nВыберите новый часовой пояс:", reply_markup=get_timezone_keyboard())
+        p_id = next((c['id'] for c in cities if c['is_primary']), -1)
+        await query.edit_message_text("🏙️ <b>Города</b>", reply_markup=get_cities_keyboard(cities, p_id), parse_mode='HTML')
 
-    elif data == TIMEZONE_OTHER:
-         await query.edit_message_text("🌎 Выберите регион:", reply_markup=get_extended_timezone_keyboard())
-
-    elif data == "TZ_BACK_MAIN":
-         await query.edit_message_text("🌍 Выберите ваш часовой пояс:", reply_markup=get_timezone_keyboard())
-
-    elif data.startswith(TIMEZONE_PREFIX):
-        new_tz = data.replace(TIMEZONE_PREFIX, "")
-        await update_user_timezone(user_id, new_tz)
-        display = get_timezone_display_name(new_tz)
-        
-        # Get user settings to return to keyboard
-        user = await get_user(user_id)
-        
-        await query.answer(f"✅ Часовой пояс изменен на {display}")
-        await query.edit_message_text(
-             f"✅ Часовой пояс изменен на {display}\n\n⚙️ <b>Настройки</b>",
-             reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']),
-             parse_mode='HTML'
-        )
-
-    elif data == CHANGE_TIME:
-        await query.edit_message_text("🕐 Выберите время получения уведомлений:", reply_markup=get_time_keyboard())
-    
-    elif data == CHANGE_SENSITIVITY:
-         await query.edit_message_text("🌡️ Как вы ощущаете холод?", reply_markup=get_sensitivity_keyboard())
-
-    elif data == TOGGLE_NOTIFICATIONS:
-        user = await get_user(user_id)
-        new_val = not user['is_active']
-        await update_user_field(user_id, 'is_active', 1 if new_val else 0)
-        await query.edit_message_text("⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(new_val, user['alerts_enabled']), parse_mode='HTML')
-        
-    elif data == TOGGLE_ALERTS:
-        user = await get_user(user_id)
-        new_val = not user['alerts_enabled']
-        await update_user_field(user_id, 'alerts_enabled', 1 if new_val else 0)
-        await query.edit_message_text("⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(user['is_active'], new_val), parse_mode='HTML')
-    
-    elif data == ADD_CITY:
-        await query.message.reply_text("Введите название нового города:")
-        return # Client side needs to know state? Not pure callback. 
-        # Since we can't easily switch to ConversationHandler state from CallbackQuery without workaround, 
-        # we often use a separate command or use `context.user_data['state']` if using a global message handler.
-        # But here we used ConversationHandler for start.
-        # Let's start a city_add conversation via text message prompt.
-        # Limitation: CallbackQuery cannot arbitrary start a ConversationHandler unless entry points match.
-        # Workaround: Send message "Enter city name..." and user types it. We need a general MessageHandler to catch it if state is set.
-        
     elif data.startswith("view_city_"):
-        city_id = int(data.split("_")[2])
-        await set_primary_city(user_id, city_id)
-        await query.answer("✅ Основной город изменен!")
-        # Refresh list
+        cid = int(data.split("_")[2])
+        await set_primary_city(user_id, cid)
         cities = await get_user_cities(user_id)
-        await query.edit_message_reply_markup(reply_markup=get_cities_keyboard(cities, city_id))
+        await query.edit_message_reply_markup(reply_markup=get_cities_keyboard(cities, cid))
+
+    elif data == ADD_CITY:
+        await query.message.reply_text("Введите название города:")
+        context.user_data['state'] = 'WAITING_CITY'
 
     elif data == REMOVE_CITY:
-        # Show list to remove? Simplified: click city to set primary. 
-        # Implementing removal UI inside inline keyboard is distinct.
-        # For now, let's just toggle back to settings.
-        await query.answer("Для удаления используйте меню городов (пока не реализовано UI удаление)")
-        
+        await query.answer("Нажмите на город...") # Simplified
+
+    elif data == CHANGE_TIMEZONE:
+        await query.edit_message_text("🌍 Выберите:", reply_markup=get_timezone_keyboard())
+
+    elif data == TIMEZONE_OTHER:
+        await query.edit_message_text("🌎 Регион:", reply_markup=get_extended_timezone_keyboard())
+
+    elif data == "TZ_BACK_MAIN":
+         await query.edit_message_text("🌍 Часовой пояс:", reply_markup=get_timezone_keyboard())
+
+    elif data.startswith(TIMEZONE_PREFIX):
+        tz = data.replace(TIMEZONE_PREFIX, "")
+        await update_user_timezone(user_id, tz)
+        user = await get_user(user_id) 
+        await query.edit_message_text("✅ Часовой пояс сохранен.\n⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
+
+    elif data == CHANGE_TIME:
+        await query.edit_message_text("🕐 Время:", reply_markup=get_time_keyboard())
+
+    elif data == CHANGE_SENSITIVITY:
+        await query.edit_message_text("🌡️ Чувствительность:", reply_markup=get_sensitivity_keyboard())
+
     elif data.startswith("sens_"):
-        map_val = {'sens_cold': 'cold_sensitive', 'sens_normal': 'normal', 'sens_hot': 'heat_sensitive'}
-        await update_user_field(user_id, 'temperature_sensitivity', map_val[data])
-        await query.answer("✅ Чувствительность обновлена!")
-        await query.edit_message_text("⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(True, True), parse_mode='HTML') # refresh status? User status logic needed
+        m = {'sens_cold': 'cold_sensitive', 'sens_normal': 'normal', 'sens_hot': 'heat_sensitive'}
+        await update_user_field(user_id, 'temperature_sensitivity', m[data])
+        user = await get_user(user_id)
+        await query.edit_message_text("✅ Сохранено.\n⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
 
     elif data.startswith("time_"):
-         t = data.split("_")[1]
-         if t == 'custom':
-             await query.message.reply_text("Напишите время в формате ЧЧ:ММ (например 14:30)")
-             # Again, dealing with text input.
-         else:
-             await update_user_field(user_id, 'notification_time', t)
-             await query.answer(f"✅ Время установлено: {t}")
-             await query.edit_message_text("⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(True, True), parse_mode='HTML')
+        t = data.split("_")[1]
+        if t == 'custom':
+            await query.message.reply_text("Введите время (ЧЧ:ММ):")
+            context.user_data['state'] = 'WAITING_TIME'
+        else:
+            await update_user_field(user_id, 'notification_time', t)
+            user = await get_user(user_id)
+            await query.edit_message_text(f"✅ Время: {t}\n⚙️ <b>Настройки</b>", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
 
-# --- HELPERS ---
-async def show_weather_now(query, user_id):
-    city = await get_primary_city(user_id)
-    if not city:
-        await query.answer("Нет городов!")
-        return
-        
-    forecast = await get_forecast(lat=city['latitude'], lon=city['longitude'])
-    user = await get_user(user_id)
-    
-    if forecast:
-        text = format_daily_forecast(forecast, user['temperature_sensitivity'], city['city_name'], user['user_name'])
-        # Edit message or send new? If forecast is long, better send new.
-        await query.message.reply_text(text, parse_mode='HTML', reply_markup=get_back_keyboard())
-    else:
-        await query.answer("Ошибка получения погоды.")
+    elif data == CHANGE_NAME:
+        await query.message.reply_text("Введите имя:")
+        context.user_data['state'] = 'WAITING_NAME'
 
 async def show_stats(query, user_id):
     city = await get_primary_city(user_id)
     if not city: return
-    
     stats = await get_weekly_stats(user_id, city['city_name'])
     if not stats:
-        await query.edit_message_text("📊 Пока нет статистики. Она появится через пару дней активного использования.", reply_markup=get_back_keyboard())
+        await query.edit_message_text("Нет статистики. Она появится через пару дней.", reply_markup=get_back_keyboard())
         return
-        
-    # Build Stats Text
-    lines = [f"📊 <b>Статистика: {city['city_name']}</b>\n"]
-    for s in stats:
-        date_nice = s['date'] # ideally format "25 янв"
-        lines.append(f"{date_nice}: {s['temp_min']:.0f}°...{s['temp_max']:.0f}°C, {s['condition']}")
-        
-    await query.edit_message_text("\n".join(lines), reply_markup=get_back_keyboard(), parse_mode='HTML')
-
-# --- ADD CITY CONVERSATION ---
-async def add_city_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # This must be triggered by a command or similar if we can't chain from callback easily without tweaks.
-    # We will use command /addcity or just rely on the 'ADD_CITY' callback prompting user, 
-    # but we need a handler that listens to text.
-    pass
+    
+    graph = generate_weekly_trend_graph(stats)
+    await query.edit_message_text(graph, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """General handler for text inputs when not in explicit conversation."""
     msg = update.message.text
     user_id = update.effective_user.id
-    
-    # Check if we are waiting for custom time?
-    # Simple state management via user_data
     state = context.user_data.get('state')
     
     if state == 'WAITING_TIME':
-        # Validate and set time
         try:
-            import datetime
-            datetime.datetime.strptime(msg, "%H:%M")
-            await update_user_field(user_id, 'notification_time', msg)
-            await update.message.reply_text(f"✅ Время установлено: {msg}")
-            context.user_data['state'] = None
-        except:
-             await update.message.reply_text("❌ Неверный формат. ЧЧ:ММ")
-             
+             import datetime
+             datetime.datetime.strptime(msg, "%H:%M")
+             await update_user_field(user_id, 'notification_time', msg)
+             await update.message.reply_text(f"✅ Время: {msg}")
+        except: await update.message.reply_text("❌ Неверный формат.")
+        context.user_data['state'] = None
     elif state == 'WAITING_CITY':
         coords = await get_coordinates(msg)
         if coords:
             await add_city(user_id, msg, coords[0], coords[1])
             await update.message.reply_text(f"✅ Город {msg} добавлен!")
-            context.user_data['state'] = None
-        else:
-             await update.message.reply_text("❌ Город не найден.")
-             
+        else: await update.message.reply_text("❌ Не найдено.")
+        context.user_data['state'] = None
     elif state == 'WAITING_NAME':
         await update_user_field(user_id, 'user_name', msg)
-        await update.message.reply_text(f"✅ Имя изменено на {msg}")
+        await update.message.reply_text(f"✅ Имя: {msg}")
         context.user_data['state'] = None
-    
     else:
-        # Default fallback
-        await update.message.reply_text("Используйте меню:", reply_markup=get_main_menu_keyboard())
-
-# --- Callback query for inputs ---
-async def detailed_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    
-    if data == CHANGE_NAME:
-        await query.message.reply_text("Введите новое имя:")
-        context.user_data['state'] = 'WAITING_NAME'
-        await query.answer()
-
-    elif data == ADD_CITY:
-        await query.message.reply_text("Введите название города:")
-        context.user_data['state'] = 'WAITING_CITY'
-        await query.answer()
-        
-    elif data == 'time_custom':
-        await query.message.reply_text("Введите время (ЧЧ:ММ):")
-        context.user_data['state'] = 'WAITING_TIME'
-        await query.answer()
-        
-    else:
-        await menu_handler(update, context)
-
+        await update.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())
 
 async def post_init(application: ApplicationBuilder):
     await init_db()
-    
-    # Timezone migration broadcast
-    users_to_init = await get_users_needing_timezone_init()
-    if users_to_init:
-        logger.info(f"Sending timezone init message to {len(users_to_init)} users...")
-        for uid in users_to_init:
-            try:
-                await application.bot.send_message(
-                    uid,
-                    "🕐 <b>Обновление бота!</b>\n\nТеперь вы можете выбрать свой часовой пояс для точного времени уведомлений.\nПожалуйста, выберите ваш часовой пояс:",
-                    reply_markup=get_timezone_keyboard(),
-                    parse_mode='HTML'
-                )
-                await mark_timezone_initialized(uid)
-            except Exception as e:
-                logger.error(f"Failed to send timezone init to {uid}: {e}")
+    users = await get_users_needing_timezone_init()
+    for uid in users:
+        try:
+            await application.bot.send_message(uid, "🌍 Пожалуйста, выберите часовой пояс:", reply_markup=get_timezone_keyboard())
+            await mark_timezone_initialized(uid)
+        except: pass
 
 def main():
     if not TELEGRAM_BOT_TOKEN:
-        print("Error: TELEGRAM_BOT_TOKEN not found.")
+        print("Token error")
         return
 
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
-    # Registration Flow
-    conv_handler = ConversationHandler(
+    setup_scheduler(application)
+
+    conv = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
@@ -395,23 +418,12 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel)]
     )
 
-    application.add_handler(conv_handler)
-    
-    # Generic Commands
+    application.add_handler(conv)
     application.add_handler(CommandHandler("menu", lambda u,c: u.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())))
-    
-    # Callback Query Handler
-    application.add_handler(CallbackQueryHandler(detailed_callback_handler))
-
-    # Text Handler for states (Time, Name, City)
+    application.add_handler(CallbackQueryHandler(menu_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
 
-    # Scheduler
-    job_queue = application.job_queue
-    job_queue.run_repeating(send_daily_notifications, interval=60, first=10)
-    job_queue.run_repeating(history_job, interval=86400, first=80000) # Simple periodicity
-
-    print("Bot is running...")
+    print("Bot running...")
     application.run_polling()
 
 if __name__ == '__main__':

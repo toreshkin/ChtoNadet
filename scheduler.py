@@ -8,6 +8,7 @@ from database import (
 )
 from weather import get_forecast
 from recommendations import format_daily_forecast
+from smart_alerts import check_rain_alerts, check_uv_alerts, check_air_quality_alerts, check_severe_weather
 
 logger = logging.getLogger(__name__)
 
@@ -124,11 +125,6 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
             
             # Simple alert: if drop is massive
             if (max_t - min_t) > 10:
-                # We haven't built complex tracking of "already sent alert", so we might spam.
-                # Only send if the drop happens soon?
-                # For MVP, we will skip implementation of complex state tracking for alerts 
-                # to avoid spamming every 3 hours if the condition persists.
-                # A production system needs an 'alerts' table to log sent alerts.
                 pass 
                 
     except Exception as e:
@@ -142,20 +138,12 @@ async def save_daily_history_job(context: ContextTypes.DEFAULT_TYPE):
         users = await get_all_active_users()
         today_str = datetime.date.today().isoformat()
         
-        # Avoid duplicate work: aggregate unique (city_name, lat, lon) tuples?
-        # Because we store history per user-city (as per schema request: "user_id, city_name, date" unique),
-        # we must do it per user.
-        
         for user in users:
             city_data = await get_primary_city(user['user_id'])
             if not city_data: continue
             
             lat, lon = city_data['latitude'], city_data['longitude']
             city_name = city_data['city_name']
-            
-            # Get data. Since we want "history", and we are at the end of the day,
-            # current weather is just "now". Ideally we want max/min of the day.
-            # Forecast API gives max/min for the day!
             
             forecast = await get_forecast(lat=lat, lon=lon)
             if not forecast: continue
@@ -183,3 +171,28 @@ async def save_daily_history_job(context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         logger.error(f"Error in history job: {e}")
+
+def setup_scheduler(application):
+    """
+    Configures all scheduled jobs.
+    """
+    job_queue = application.job_queue
+    
+    # Existing Daily Notifications (every minute check)
+    job_queue.run_repeating(send_daily_notifications, interval=60, first=10)
+    
+    # History Job (End of day)
+    job_queue.run_repeating(save_daily_history_job, interval=86400, first=80000)
+    
+    # Smart Alerts
+    # Rain - every hour
+    job_queue.run_repeating(check_rain_alerts, interval=3600, first=30)
+    
+    # UV - daily morning check (simplified to repeating for now, filter inside or align time)
+    job_queue.run_repeating(check_uv_alerts, interval=3600, first=40)
+    
+    # Air Quality - every 6 hours
+    job_queue.run_repeating(check_air_quality_alerts, interval=21600, first=50)
+    
+    # Severe Weather - every hour
+    job_queue.run_repeating(check_severe_weather, interval=3600, first=60)

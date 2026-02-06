@@ -172,3 +172,132 @@ async def get_forecast(lat: float = None, lon: float = None, city: str = None):
         except Exception as e:
             logger.error(f"Exception in get_forecast: {e}")
             return None
+            logger.error(f"Exception in get_forecast: {e}")
+            return None
+
+async def get_air_quality(city: str) -> dict:
+    """Fetches air quality data."""
+    async with aiohttp.ClientSession() as session:
+        params = {
+            "key": WEATHERAPI_KEY,
+            "q": city,
+            "aqi": "yes"
+        }
+        try:
+            async with session.get(f"{BASE_URL}/current.json", params=params) as resp:
+                if resp.status != 200: return None
+                data = await resp.json()
+                aqi_data = data.get('current', {}).get('air_quality', {})
+                # WeatherAPI returns 'us-epa-index' or 'gb-defra-index'
+                # But for standard AQI (0-500), mostly people use 'pm2_5' or 'pm10' to calculate, 
+                # or rely on 'us-epa-index' (1-6 scale).
+                # The user asked for 0-50 colors (Standard AQI). 
+                # WeatherAPI does NOT return standard 0-500 AQI directly in the free tier usually?
+                # Actually it returns 'us-epa-index' (1-6) and 'gb-defra-index'.
+                # However, it DOES return raw pollutant numbers.
+                # Use US-EPA index mapping or approximation?
+                # Wait, prompt says: "0-50: Good". This is standard AQI.
+                # We might need to calculate it or check if WeatherAPI provides it.
+                # Actually, WeatherAPI generally provides 'us-epa-index'.
+                # 1 = Good, 2 = Moderate, 3 = Unhealthy for sensitive, 4 = Unhealthy, 5 = Very Unhealthy, 6 = Hazardous.
+                # The prompt asks for 0-50, 51-100...
+                # Let's try to map EPA index to a range or just return the raw 'us-epa-index' and handle display logic?
+                # OR use the 'pm25' value to estimate AQI using a helper?
+                # Let's return raw dictionary + calculated standard AQI estimate.
+                
+                pm2_5 = aqi_data.get('pm2_5', 0)
+                # Quick approx calculation of US AQI from PM2.5
+                # Simple linear interpolation for ranges?
+                # Real algorithm is complex. Let's use a simplified version because strict calculation is heavy.
+                # For MVP, maybe return data as is, and let analytics.py format it?
+                # User asked for `get_air_quality(city: str) -> dict`. 
+                # I will return the full 'air_quality' object + an estimated 'aqi_val' key.
+                
+                aqi_val = 0
+                if pm2_5 <= 12.0:
+                    aqi_val = ((50 - 0) / (12.0 - 0)) * (pm2_5 - 0) + 0
+                elif pm2_5 <= 35.4:
+                    aqi_val = ((100 - 51) / (35.4 - 12.1)) * (pm2_5 - 12.1) + 51
+                elif pm2_5 <= 55.4:
+                    aqi_val = ((150 - 101) / (55.4 - 35.5)) * (pm2_5 - 35.5) + 101
+                elif pm2_5 <= 150.4:
+                    aqi_val = ((200 - 151) / (150.4 - 55.5)) * (pm2_5 - 55.5) + 151
+                else:
+                    aqi_val = 201 # Very bad
+                
+                aqi_data['aqi_val'] = int(aqi_val)
+                return aqi_data
+        except Exception:
+            return None
+
+async def get_uv_index(city: str) -> int:
+    """Fetches UV index."""
+    async with aiohttp.ClientSession() as session:
+        params = {"key": WEATHERAPI_KEY, "q": city}
+        try:
+            async with session.get(f"{BASE_URL}/current.json", params=params) as resp:
+                if resp.status != 200: return 0
+                data = await resp.json()
+                return int(data.get('current', {}).get('uv', 0))
+        except Exception:
+            return 0
+
+async def check_rain_in_next_hours(city: str, hours: int = 2) -> dict:
+    """
+    Checks for rain in the upcoming hours.
+    Returns dict with {will_rain: bool, start_time: str, intensity: str}
+    """
+    # Use forecast.json
+    async with aiohttp.ClientSession() as session:
+        params = {"key": WEATHERAPI_KEY, "q": city, "days": 1, "aqi": "no", "alerts": "no"}
+        try:
+            async with session.get(f"{BASE_URL}/forecast.json", params=params) as resp:
+                if resp.status != 200: return None
+                data = await resp.json()
+                
+                forecast_day = data.get('forecast', {}).get('forecastday', [])
+                if not forecast_day: return None
+                
+                hourly = forecast_day[0].get('hour', [])
+                
+                import datetime
+                import pytz
+                
+                # We need to find "current hour" in the list.
+                # WeatherAPI returns hours in local time of the location usually or proper epoch.
+                # Let's use epoch 'time_epoch' for reliable comparison.
+                now_epoch = datetime.datetime.now().timestamp()
+                
+                upcoming_rain = []
+                
+                for h in hourly:
+                    h_epoch = h.get('time_epoch')
+                    if h_epoch > now_epoch and h_epoch <= now_epoch + (hours * 3600):
+                        # check rain
+                        if h.get('will_it_rain', 0) == 1 or h.get('chance_of_rain', 0) > 60:
+                             upcoming_rain.append(h)
+                             
+                if upcoming_rain:
+                    first = upcoming_rain[0]
+                    return {
+                        'will_rain': True,
+                        'start_time': first.get('time').split(' ')[1], # "HH:MM"
+                        'intensity': first.get('condition', {}).get('text'),
+                        'chance': first.get('chance_of_rain')
+                    }
+                return {'will_rain': False}
+
+        except Exception:
+            return None
+
+async def get_severe_weather_alerts(city: str) -> list:
+    """Fetches weather alerts."""
+    async with aiohttp.ClientSession() as session:
+        params = {"key": WEATHERAPI_KEY, "q": city, "days": 1, "alerts": "yes"}
+        try:
+            async with session.get(f"{BASE_URL}/forecast.json", params=params) as resp:
+                if resp.status != 200: return []
+                data = await resp.json()
+                return data.get('alerts', {}).get('alert', [])
+        except Exception:
+            return []
