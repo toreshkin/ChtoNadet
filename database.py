@@ -419,3 +419,28 @@ async def get_users_with_null_timezone():
         async with db.execute("SELECT user_id FROM users WHERE timezone IS NULL AND timezone_initialized = 0") as cursor:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
+
+async def get_admin_stats():
+    """
+    Returns global bot statistics for the admin.
+    """
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        stats = {}
+        
+        # Total users
+        async with db.execute("SELECT count(*) FROM users") as c:
+            stats['total_users'] = (await c.fetchone())[0]
+            
+        # Active users (is_active = 1)
+        async with db.execute("SELECT count(*) FROM users WHERE is_active = 1") as c:
+            stats['active_users'] = (await c.fetchone())[0]
+            
+        # Total cities added
+        async with db.execute("SELECT count(*) FROM cities") as c:
+            stats['total_cities'] = (await c.fetchone())[0]
+            
+        # Total history snapshots
+        async with db.execute("SELECT count(*) FROM weather_history") as c:
+            stats['history_records'] = (await c.fetchone())[0]
+            
+        return stats

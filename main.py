@@ -10,7 +10,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, ADMIN_ID
 from database import (
     init_db, upsert_user, get_user, update_user_field, 
     add_city, get_user_cities, remove_city, set_primary_city, 
@@ -18,7 +18,8 @@ from database import (
     update_user_timezone, get_users_needing_timezone_init, mark_timezone_initialized,
     get_notification_preferences, update_notification_preference, 
     save_weather_snapshot, get_weather_comparison, create_snapshots_table,
-    save_wardrobe_item, get_users_with_null_timezone, create_wardrobe_table
+    save_wardrobe_item, get_users_with_null_timezone, create_wardrobe_table,
+    get_admin_stats
 )
 from weather import get_coordinates, get_current_weather, get_forecast, get_uv_index, get_air_quality
 from scheduler import setup_scheduler
@@ -756,6 +757,25 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Ошибка при определении города.",
             reply_markup=get_main_reply_keyboard()
         )
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to see bot stats"""
+    user_id = update.effective_user.id
+    
+    if str(user_id) != str(ADMIN_ID):
+        # Silently ignore if not admin or show basic access denied
+        return
+
+    stats = await get_admin_stats()
+    
+    text = (
+        "📊 <b>Статистика бота (Admin)</b>\n\n"
+        f"👥 Всего пользователей: {stats['total_users']}\n"
+        f"✅ Активных: {stats['active_users']}\n"
+        f"🏙️ Всего городов добавлено: {stats['total_cities']}\n"
+        f"📝 Записей истории: {stats['history_records']}\n"
+    )
+    
+    await update.message.reply_text(text, parse_mode='HTML')
 
 
 def main():
@@ -784,6 +804,7 @@ def main():
     application.add_handler(CommandHandler("stats", quick_stats))
     application.add_handler(CommandHandler("settings", quick_settings))
     application.add_handler(CommandHandler("help", quick_help))
+    application.add_handler(CommandHandler("admin", admin_command))
     
     application.add_handler(CommandHandler("menu", lambda u,c: u.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())))
     application.add_handler(CallbackQueryHandler(menu_handler))

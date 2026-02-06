@@ -10,6 +10,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "weather_bot.db")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+ADMIN_ID = os.getenv("ADMIN_ID") # Add this to .env to see bot stats
 
 # Logging configuration
 logging.basicConfig(
