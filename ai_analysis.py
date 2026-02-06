@@ -58,10 +58,12 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     """
 
     # List of models to try in order
+    # Using 'latest' aliases where appropriate or strictly known working models
     candidates = [
         'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
         'gemini-1.5-pro',
-        'gemini-pro-vision',
+        'gemini-1.5-pro-latest',
     ]
 
     last_error = None
@@ -123,7 +125,13 @@ async def analyze_clothing_text(text_description: str) -> Dict:
     }}
     """
 
-    candidates = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    # Updated model list with latest aliases
+    candidates = [
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-pro',
+        'gemini-1.5-pro-latest',
+    ]
     last_error = None
     
     for model_name in candidates:
