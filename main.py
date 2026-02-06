@@ -10,7 +10,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
-from config import TELEGRAM_BOT_TOKEN, GEMINI_API_KEY
+from config import TELEGRAM_BOT_TOKEN
 from database import (
     init_db, upsert_user, get_user, update_user_field, 
     add_city, get_user_cities, remove_city, set_primary_city, 
@@ -35,7 +35,7 @@ from keyboards import (
     get_main_menu_keyboard, get_settings_keyboard, get_cities_keyboard,
     get_sensitivity_keyboard, get_time_keyboard, get_back_keyboard,
     get_weather_action_buttons, get_notification_settings_keyboard,
-    get_photo_analysis_buttons,
+    get_photo_analysis_buttons, get_main_reply_keyboard,
     WEATHER_NOW, SETTINGS, STATS, HELP, BACK_TO_MENU,
     CHANGE_CITY, LIST_CITIES, ADD_CITY, REMOVE_CITY,
     CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME, CHANGE_TIMEZONE,
@@ -47,6 +47,7 @@ from timezones import (
     get_timezone_keyboard, get_extended_timezone_keyboard, get_timezone_display_name,
     TIMEZONE_PREFIX, TIMEZONE_OTHER, COMMON_TIMEZONES
 )
+from streak import update_streak, get_streak_info, get_streak_message
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -222,10 +223,28 @@ async def ask_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await upsert_user(user.id, user.username, user_name=name, timezone=tz)
     await add_city(user.id, city_name, lat, lon, is_primary=True)
     
+    # Get user data to show notification time
+    user_data = await get_user(user.id)
+    notif_time = user_data.get('notification_time', '07:00')
+    
     await msg.reply_text(
-        f"✅ Настройка завершена!\nЯ буду присылать прогнозы в 07:00.\n\n📸 Отправьте мне фото одежды, чтобы узнать, подходит ли она на сегодня!",
-        reply_markup=get_main_menu_keyboard()
+        f"✅ Настройка завершена!\n\n"
+        f"🔔 Утренний прогноз: {notif_time}\n"
+        f"<i>(можно изменить в ⚙️ Настройках)</i>\n\n"
+        f"🌤 Смотрите погоду прямо сейчас ниже! ⬇️",
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode='HTML'
     )
+    
+    # Automatically show weather after registration
+    city_data = await get_primary_city(user.id)
+    weather_msg = await generate_weather_message_content(user.id, city_data)
+    await msg.reply_text(
+        weather_msg,
+        parse_mode='HTML',
+        reply_markup=get_weather_action_buttons()
+    )
+    
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -290,6 +309,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     
     if data == WEATHER_NOW or data == REFRESH_WEATHER:
+        await query.answer("⏳ Загружаю погоду...", show_alert=False)
         city = await get_primary_city(user_id)
         msg = await generate_weather_message_content(user_id, city)
         try:
@@ -298,9 +318,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
              await query.message.reply_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
 
     elif data == ANALYZE_CLOTHING:
-        # await query.message.reply_text("👗 <b>Опишите вашу одежду текстом:</b>\nНапример: 'белая футболка и джинсы' или 'легкое платье'", parse_mode='HTML')
-        # context.user_data['state'] = 'WAITING_CLOTHING_TEXT'
-        await query.message.reply_text("⚠️ Анализ одежды временно отключен.", parse_mode='HTML')
+        # Show popup alert instead of sending message to avoid chat clutter
+        await query.answer("⚠️ Анализ одежды временно отключен.", show_alert=True)
+        return  # Don't send any message
 
     elif data == WEATHER_DETAILS:
         city = await get_primary_city(user_id)
@@ -323,12 +343,30 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         key = data.replace("toggle_", "")
         prefs = await get_notification_preferences(user_id)
         curr = prefs.get(key, 1)
-        await update_notification_preference(user_id, key, not curr)
+        new_state = not curr
+        await update_notification_preference(user_id, key, new_state)
         prefs = await get_notification_preferences(user_id)
         await query.edit_message_reply_markup(reply_markup=get_notification_settings_keyboard(prefs))
+        # Show feedback
+        status = "✅ Включено" if new_state else "❌ Выключено"
+        await query.answer(status, show_alert=False)
 
     elif data == HELP:
-        await query.edit_message_text("ℹ️ <b>Помощь</b>\n\nПросто отправьте фото одежды или нажмите 'Анализ одежды'!", reply_markup=get_back_keyboard(), parse_mode='HTML')
+        help_text = (
+            "ℹ️ <b>Помощь</b>\n\n"
+            "🌤 <b>Погода сейчас:</b>\n"
+            "Актуальный прогноз с температурой, ветром, влажностью, UV-индексом и качеством воздуха.\n\n"
+            "📊 <b>Статистика:</b>\n"
+            "Недельные тренды температуры и сравнение с прошлой неделей (появится через 2-3 дня).\n\n"
+            "⚙️ <b>Настройки:</b>\n"
+            "• Управление городами\n"
+            "• Настройка уведомлений\n"
+            "• Часовой пояс и время прогноза\n"
+            "• Чувствительность к температуре\n\n"
+            "🔔 <b>Уведомления:</b>\n"
+            "Автоматические алерты о дожде, UV-индексе, качестве воздуха и штормах."
+        )
+        await query.edit_message_text(help_text, reply_markup=get_back_keyboard(), parse_mode='HTML')
 
     elif data == BACK_TO_MENU:
         try:
@@ -345,7 +383,10 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cid = int(data.split("_")[2])
         await set_primary_city(user_id, cid)
         cities = await get_user_cities(user_id)
+        # Find city name for feedback
+        city_name = next((c['city_name'] for c in cities if c['id'] == cid), "город")
         await query.edit_message_reply_markup(reply_markup=get_cities_keyboard(cities, cid))
+        await query.answer(f"✅ Основной город: {city_name}", show_alert=False)
 
     elif data == ADD_CITY:
         await query.message.reply_text("Введите название города:")
@@ -373,7 +414,15 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🕐 Время:", reply_markup=get_time_keyboard())
 
     elif data == CHANGE_SENSITIVITY:
-        await query.edit_message_text("🌡️ Чувствительность:", reply_markup=get_sensitivity_keyboard())
+        await query.edit_message_text(
+            "🌡️ <b>Чувствительность к температуре</b>\n\n"
+            "Это влияет на рекомендации одежды:\n\n"
+            "❄️ <b>Мерзляк:</b> Советы для тех, кто мёрзнет\n"
+            "😊 <b>Нормальный:</b> Стандартные рекомендации\n"
+            "🔥 <b>Жаркий:</b> Для тех, кому всегда жарко",
+            reply_markup=get_sensitivity_keyboard(),
+            parse_mode='HTML'
+        )
 
     elif data.startswith("sens_"):
         m = {'sens_cold': 'cold_sensitive', 'sens_normal': 'normal', 'sens_hot': 'heat_sensitive'}
@@ -412,7 +461,17 @@ async def show_stats(query, user_id):
     if not city: return
     stats = await get_weekly_stats(user_id, city['city_name'])
     if not stats:
-        await query.edit_message_text("Нет статистики. Она появится через пару дней.", reply_markup=get_back_keyboard())
+        await query.edit_message_text(
+            "📊 <b>Статистика</b>\n\n"
+            "📈 Статистика появится через 2-3 дня использования.\n\n"
+            "Я буду собирать данные о погоде, чтобы показать вам:\n"
+            "• Недельные тренды температуры\n"
+            "• Сравнение с прошлой неделей\n"
+            "• Графики изменений\n\n"
+            "🔔 Пока что можете настроить уведомления в ⚙️ Настройках!",
+            reply_markup=get_back_keyboard(),
+            parse_mode='HTML'
+        )
         return
     
     graph = generate_weekly_trend_graph(stats)
@@ -516,6 +575,135 @@ async def post_init(application: ApplicationBuilder):
             await mark_timezone_initialized(user_id)
         except: pass
 
+# ===== QUICK ACCESS COMMANDS =====
+
+async def quick_weather(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command: /weather - Quick access to weather"""
+    user_id = update.effective_user.id
+    
+    # Update streak
+    current_streak, best_streak, is_new_record = await update_streak(user_id)
+    streak_msg = get_streak_message(current_streak, is_new_record)
+    
+    city = await get_primary_city(user_id)
+    if not city:
+        await update.message.reply_text(
+            "❌ Сначала настройте город через /start",
+            reply_markup=get_main_reply_keyboard()
+        )
+        return
+    
+    msg = await generate_weather_message_content(user_id, city)
+    await update.message.reply_text(
+        f"{msg}\n\n{streak_msg}",
+        parse_mode='HTML',
+        reply_markup=get_weather_action_buttons()
+    )
+
+async def quick_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command: /stats - Quick access to statistics"""
+    user_id = update.effective_user.id
+    city = await get_primary_city(user_id)
+    
+    if not city:
+        await update.message.reply_text(
+            "❌ Сначала настройте город через /start",
+            reply_markup=get_main_reply_keyboard()
+        )
+        return
+    
+    stats = await get_weekly_stats(user_id, city['city_name'])
+    if not stats:
+        await update.message.reply_text(
+            "📊 <b>Статистика</b>\n\n"
+            "📈 Статистика появится через 2-3 дня использования.\n\n"
+            "Я буду собирать данные о погоде, чтобы показать вам:\n"
+            "• Недельные тренды температуры\n"
+            "• Сравнение с прошлой неделей\n"
+            "• Графики изменений\n\n"
+            "🔔 Пока что можете настроить уведомления в ⚙️ Настройках!",
+            reply_markup=get_main_reply_keyboard(),
+            parse_mode='HTML'
+        )
+        return
+    
+    graph = generate_weekly_trend_graph(stats)
+    await update.message.reply_text(graph, parse_mode='HTML', reply_markup=get_main_reply_keyboard())
+
+async def quick_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command: /settings - Quick access to settings"""
+    await update.message.reply_text(
+        "⚙️ <b>Настройки</b>",
+        reply_markup=get_settings_keyboard(),
+        parse_mode='HTML'
+    )
+
+async def quick_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command: /help - Quick access to help"""
+    help_text = (
+        "ℹ️ <b>Помощь</b>\n\n"
+        "<b>Команды:</b>\n"
+        "/weather - Погода сейчас\n"
+        "/stats - Статистика\n"
+        "/settings - Настройки\n"
+        "/help - Эта справка\n\n"
+        "🌤 <b>Погода сейчас:</b>\n"
+        "Актуальный прогноз с температурой, ветром, влажностью, UV-индексом и качеством воздуха.\n\n"
+        "📊 <b>Статистика:</b>\n"
+        "Недельные тренды температуры и сравнение с прошлой неделей (появится через 2-3 дня).\n\n"
+        "⚙️ <b>Настройки:</b>\n"
+        "• Управление городами\n"
+        "• Настройка уведомлений\n"
+        "• Часовой пояс и время прогноза\n"
+        "• Чувствительность к температуре\n\n"
+        "🔔 <b>Уведомления:</b>\n"
+        "Автоматические алерты о дожде, UV-индексе, качестве воздуха и штормах.\n\n"
+        "🔥 <b>Серия дней:</b>\n"
+        "Проверяйте погоду каждый день, чтобы увеличить счётчик!"
+    )
+    await update.message.reply_text(help_text, parse_mode='HTML', reply_markup=get_main_reply_keyboard())
+
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle geolocation from user"""
+    location = update.message.location
+    lat, lon = location.latitude, location.longitude
+    user_id = update.effective_user.id
+    
+    # Get city name from coordinates using reverse geocoding (via weather API)
+    try:
+        # WeatherAPI can reverse geocode
+        import aiohttp
+        from config import WEATHERAPI_KEY
+        
+        async with aiohttp.ClientSession() as session:
+            url = f"http://api.weatherapi.com/v1/search.json?key={WEATHERAPI_KEY}&q={lat},{lon}"
+            async with session.get(url) as resp:
+                data = await resp.json()
+                if data and len(data) > 0:
+                    city_name = data[0]['name']
+                    
+                    await update.message.reply_text(
+                        f"📍 <b>Определён город: {city_name}</b>\n\n"
+                        f"Добавить его в избранное?",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("✅ Да", callback_data=f"add_geo_{lat}_{lon}_{city_name}"),
+                             InlineKeyboardButton("❌ Нет", callback_data=BACK_TO_MENU)]
+                        ]),
+                        parse_mode='HTML'
+                    )
+                else:
+                    await update.message.reply_text(
+                        "❌ Не удалось определить город по координатам.",
+                        reply_markup=get_main_reply_keyboard()
+                    )
+    except Exception as e:
+        logger.error(f"Geolocation error: {e}")
+        await update.message.reply_text(
+            "❌ Ошибка при определении города.",
+            reply_markup=get_main_reply_keyboard()
+        )
+
+
 def main():
     if not TELEGRAM_BOT_TOKEN:
         print("Token error")
@@ -536,9 +724,17 @@ def main():
     )
 
     application.add_handler(conv)
+    
+    # Quick access commands
+    application.add_handler(CommandHandler("weather", quick_weather))
+    application.add_handler(CommandHandler("stats", quick_stats))
+    application.add_handler(CommandHandler("settings", quick_settings))
+    application.add_handler(CommandHandler("help", quick_help))
+    
     application.add_handler(CommandHandler("menu", lambda u,c: u.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())))
     application.add_handler(CallbackQueryHandler(menu_handler))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.LOCATION, handle_location))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
 
     print("Bot running...")

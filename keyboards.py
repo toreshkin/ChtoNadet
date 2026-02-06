@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 # Constants for Callback Data
 WEATHER_NOW = "weather_now"
@@ -44,7 +44,6 @@ def get_standard_action_buttons():
 def get_main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("🌤️ Погода сейчас", callback_data=WEATHER_NOW)],
-        [InlineKeyboardButton("👗 Анализ одежды", callback_data=ANALYZE_CLOTHING)],
         [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS), InlineKeyboardButton("📊 Статистика", callback_data=STATS)],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data=HELP)]
     ]
@@ -53,8 +52,7 @@ def get_main_menu_keyboard():
 def get_weather_action_buttons():
     """Quick actions for weather message."""
     keyboard = [
-        [InlineKeyboardButton("🔄 Обновить", callback_data=REFRESH_WEATHER), 
-         InlineKeyboardButton("👗 Анализ одежды", callback_data=ANALYZE_CLOTHING)],
+        [InlineKeyboardButton("🔄 Обновить", callback_data=REFRESH_WEATHER)],
         [InlineKeyboardButton("📊 Детали", callback_data=WEATHER_DETAILS),
          InlineKeyboardButton("📈 Статистика", callback_data=WEATHER_STATS)],
          [InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS)]
@@ -137,3 +135,16 @@ def get_time_keyboard():
 
 def get_back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data=BACK_TO_MENU)]])
+
+def get_main_reply_keyboard():
+    """
+    Persistent Reply Keyboard for quick access to main features.
+    Shows at the bottom of the chat.
+    """
+    keyboard = [
+        [KeyboardButton("🌤 Погода"), KeyboardButton("📊 Статистика")],
+        [KeyboardButton("⚙️ Настройки"), KeyboardButton("ℹ️ Помощь")],
+        [KeyboardButton("📍 Моя геолокация")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+

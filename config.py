@@ -9,7 +9,6 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "weather_bot.db")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Logging configuration
@@ -24,5 +23,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-if not TELEGRAM_BOT_TOKEN or not WEATHERAPI_KEY:
-    logger.warning("TELEGRAM_BOT_TOKEN or WEATHERAPI_KEY not found in environment variables.")
+# Validate critical API keys
+if not TELEGRAM_BOT_TOKEN or len(TELEGRAM_BOT_TOKEN) < 20:
+    raise ValueError("❌ Invalid or missing TELEGRAM_BOT_TOKEN. Please check your .env file.")
+
+if not WEATHERAPI_KEY or len(WEATHERAPI_KEY) < 10:
+    raise ValueError("❌ Invalid or missing WEATHERAPI_KEY. Please check your .env file.")
+
+logger.info("✅ Configuration loaded successfully.")

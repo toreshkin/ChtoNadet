@@ -179,20 +179,59 @@ def setup_scheduler(application):
     job_queue = application.job_queue
     
     # Existing Daily Notifications (every minute check)
-    job_queue.run_repeating(send_daily_notifications, interval=60, first=10)
+    # misfire_grace_time=30 means: if job is late by >30s, skip it
+    job_queue.run_repeating(
+        send_daily_notifications, 
+        interval=60, 
+        first=10,
+        name="daily_notifications",
+        job_kwargs={'misfire_grace_time': 30}
+    )
     
-    # History Job (End of day)
-    job_queue.run_repeating(save_daily_history_job, interval=86400, first=80000)
+    # History Job (End of day) - once per day at 23:55
+    job_queue.run_repeating(
+        save_daily_history_job, 
+        interval=86400, 
+        first=80000,
+        name="daily_history",
+        job_kwargs={'misfire_grace_time': 300}
+    )
     
     # Smart Alerts
     # Rain - every hour
-    job_queue.run_repeating(check_rain_alerts, interval=3600, first=30)
+    job_queue.run_repeating(
+        check_rain_alerts, 
+        interval=3600, 
+        first=30,
+        name="rain_alerts",
+        job_kwargs={'misfire_grace_time': 60}
+    )
     
-    # UV - daily morning check (simplified to repeating for now, filter inside or align time)
-    job_queue.run_repeating(check_uv_alerts, interval=3600, first=40)
+    # UV - every 3 hours (optimized from hourly)
+    job_queue.run_repeating(
+        check_uv_alerts, 
+        interval=10800,  # 3 hours instead of 1
+        first=40,
+        name="uv_alerts",
+        job_kwargs={'misfire_grace_time': 120}
+    )
     
     # Air Quality - every 6 hours
-    job_queue.run_repeating(check_air_quality_alerts, interval=21600, first=50)
+    job_queue.run_repeating(
+        check_air_quality_alerts, 
+        interval=21600, 
+        first=50,
+        name="air_quality_alerts",
+        job_kwargs={'misfire_grace_time': 180}
+    )
     
     # Severe Weather - every hour
-    job_queue.run_repeating(check_severe_weather, interval=3600, first=60)
+    job_queue.run_repeating(
+        check_severe_weather, 
+        interval=3600, 
+        first=60,
+        name="severe_weather_alerts",
+        job_kwargs={'misfire_grace_time': 60}
+    )
+    
+    logger.info("✅ Scheduler configured with 6 jobs.")

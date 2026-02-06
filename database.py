@@ -44,6 +44,22 @@ async def init_db():
             await db.execute("ALTER TABLE users ADD COLUMN timezone_initialized BOOLEAN DEFAULT 0")
         except Exception:
             pass # Column likely exists
+        
+        # Streak tracking for gamification
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN current_streak INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN last_check_date DATE")
+        except Exception:
+            pass
+        
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN best_streak INTEGER DEFAULT 0")
+        except Exception:
+            pass
 
         # 3. Create 'cities' table
         await db.execute("""
