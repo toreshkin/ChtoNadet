@@ -15,26 +15,40 @@ def init_gemini(api_key: str):
         logger.warning("Gemini API Key missing. AI features disabled.")
         return
     genai.configure(api_key=api_key)
+    
+    # Log available models
+    try:
+        for model in genai.list_models():
+            if 'generateContent' in model.supported_generation_methods:
+                logger.info(f"Available Gemini model: {model.name}")
+    except Exception as e:
+        logger.error(f"Could not list models: {e}")
 
 async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     """
     Analyze clothing photo using Gemini Vision
-    
-    Returns:
-    {
-        'success': bool,
-        'clothing_type': str,
-        'material': str,
-        'warmth_level': str,
-        'suitable_temp_min': int,
-        'suitable_temp_max': int,
-        'style': str,
-        'description': str
-    }
     """
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Try different model names in order of preference
+        model_names = [
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+            'gemini-pro-vision',
+        ]
         
+        model = None
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                logger.info(f"Selected Gemini model: {model_name}")
+                break
+            except Exception as e:
+                continue
+        
+        # Fallback to older default if nothing worked
+        if model is None:
+             model = genai.GenerativeModel('gemini-pro-vision')
+             
         # Prepare image
         import PIL.Image
         image = PIL.Image.open(BytesIO(photo_bytes))
