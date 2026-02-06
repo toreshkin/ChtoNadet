@@ -1,7 +1,8 @@
 """
-AI-powered clothing analysis using Google Gemini Vision
+AI-powered clothing analysis using Google GenAI SDK (v1)
 """
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import json
 import logging
 from typing import Dict, Optional
@@ -9,26 +10,30 @@ from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
+# Global client
+client: Optional[genai.Client] = None
+
 # Initialize Gemini
 def init_gemini(api_key: str):
+    global client
     if not api_key:
         logger.warning("Gemini API Key missing. AI features disabled.")
         return
-    genai.configure(api_key=api_key)
     
-    # Log available models
     try:
-        logger.info("Listing available Gemini models:")
-        for model in genai.list_models():
-            if 'generateContent' in model.supported_generation_methods:
-                logger.info(f"Available: {model.name}")
+        # Initialize the new V1 client
+        client = genai.Client(api_key=api_key)
+        logger.info("Gemini V1 Client initialized successfully")
     except Exception as e:
-        logger.error(f"Could not list models: {e}")
+        logger.error(f"Failed to initialize Gemini Client: {e}")
 
 async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     """
-    Analyze clothing photo using Gemini Vision with automatic model fallback
+    Analyze clothing photo using Gemini Vision (V1)
     """
+    if not client:
+        return {'success': False, 'error': "AI client not initialized"}
+
     import PIL.Image
     
     # Prepare image
@@ -38,7 +43,7 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
         return {'success': False, 'error': f"Image load error: {e}"}
 
     # Prompt
-    prompt = """
+    prompt_text = """
     Проанализируй эту одежду и опиши:
     1. Тип одежды (футболка, куртка, свитер, джинсы и т.д.)
     2. Материал (если виден: хлопок, шерсть, синтетика, джинса)
@@ -58,11 +63,11 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     }
     """
 
-    # List of models to try in order
-    # Using explicit model IDs with 'models/' prefix and version suffix for v1beta API stability
+    # Models to try (V1 style models)
     candidates = [
-        'models/gemini-1.5-flash-001',
-        'models/gemini-1.5-pro-001',
+        'gemini-2.0-flash',
+        'gemini-2.0-pro-exp-02-05', # Fallback to latest pro experiment if available
+        'gemini-1.5-flash',
     ]
 
     last_error = None
@@ -70,19 +75,30 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     for model_name in candidates:
         try:
             logger.info(f"Attempting analysis with model: {model_name}")
-            model = genai.GenerativeModel(model_name)
             
-            # This is the actual network call that might fail
-            response = model.generate_content([prompt, image])
+            # Helper to strip JSON markdown
+            def clean_json(text):
+                text = text.strip()
+                if text.startswith('```'):
+                    text = text.split('```')[1]
+                    if text.startswith('json'):
+                        text = text[4:]
+                return text
+
+            # Call API
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[image, prompt_text],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
             
-            # Parse JSON
-            response_text = response.text.strip()
-            if response_text.startswith('```'):
-                response_text = response_text.split('```')[1]
-                if response_text.startswith('json'):
-                    response_text = response_text[4:]
-            
-            data = json.loads(response_text)
+            # Check response
+            if not response.text:
+                raise ValueError("Empty response from AI")
+
+            data = json.loads(response.text)
             data['success'] = True
             logger.info(f"Success with model: {model_name}")
             return data
@@ -100,8 +116,11 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
 
 async def analyze_clothing_text(text_description: str) -> Dict:
     """
-    Analyze clothing based on text description using Gemini
+    Analyze clothing based on text description using Gemini (V1)
     """
+    if not client:
+        return {'success': False, 'error': "AI client not initialized"}
+
     prompt = f"""
     Проанализируй это описание одежды: "{text_description}"
     
@@ -124,26 +143,28 @@ async def analyze_clothing_text(text_description: str) -> Dict:
     }}
     """
 
-    # Updated model list with explicit model IDs for v1beta API stability
     candidates = [
-        'models/gemini-1.5-flash-001',
-        'models/gemini-1.5-pro-001',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
     ]
     last_error = None
     
     for model_name in candidates:
         try:
             logger.info(f"Attempting text analysis with model: {model_name}")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
             
-            response_text = response.text.strip()
-            if response_text.startswith('```'):
-                response_text = response_text.split('```')[1]
-                if response_text.startswith('json'):
-                    response_text = response_text[4:]
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
             
-            data = json.loads(response_text)
+            if not response.text:
+                raise ValueError("Empty response")
+            
+            data = json.loads(response.text)
             data['success'] = True
             logger.info(f"Success with model: {model_name}")
             return data
