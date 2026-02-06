@@ -28,7 +28,8 @@ from analytics import (
     get_smart_insight
 )
 from recommendations import get_weather_emoji, get_clothing_advice
-from ai_analysis import init_gemini, analyze_clothing_photo, generate_clothing_recommendation, analyze_clothing_text
+# AI features disabled temporarily to fix crash
+# from ai_analysis import init_gemini, analyze_clothing_photo, generate_clothing_recommendation, analyze_clothing_text
 
 from keyboards import (
     get_main_menu_keyboard, get_settings_keyboard, get_cities_keyboard,
@@ -234,6 +235,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- PHOTO HANDLER ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    await update.message.reply_text("⚠️ Анализ одежды по фото временно отключен.")
+    return
+
+    # Original logic commented out
+    """
     user = await get_user(user_id)
     if not user:
         await update.message.reply_text("Сначала нажмите /start")
@@ -274,6 +280,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error handling photo: {e}")
         await loading_msg.edit_text("❌ Ошибка сервиса. Попробуйте позже.")
+    """
 
 # --- MENUS ---
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -291,8 +298,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
              await query.message.reply_text(msg, parse_mode='HTML', reply_markup=get_weather_action_buttons())
 
     elif data == ANALYZE_CLOTHING:
-        await query.message.reply_text("👗 <b>Опишите вашу одежду текстом:</b>\nНапример: 'белая футболка и джинсы' или 'легкое платье'", parse_mode='HTML')
-        context.user_data['state'] = 'WAITING_CLOTHING_TEXT'
+        # await query.message.reply_text("👗 <b>Опишите вашу одежду текстом:</b>\nНапример: 'белая футболка и джинсы' или 'легкое платье'", parse_mode='HTML')
+        # context.user_data['state'] = 'WAITING_CLOTHING_TEXT'
+        await query.message.reply_text("⚠️ Анализ одежды временно отключен.", parse_mode='HTML')
 
     elif data == WEATHER_DETAILS:
         city = await get_primary_city(user_id)
@@ -416,6 +424,9 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('state')
     
     if state == 'WAITING_CLOTHING_TEXT':
+        await update.message.reply_text("⚠️ Функция временно отключена.")
+        context.user_data['state'] = None
+        """
         await update.message.reply_text("👗 Анализирую описание... ⏳")
         
         try:
@@ -456,6 +467,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Ошибка при анализе.")
             
         context.user_data['state'] = None
+        """
         
     elif state == 'WAITING_TIME':
         try:
@@ -488,7 +500,8 @@ async def post_init(application: ApplicationBuilder):
     await init_db()
     
     # Init Gemini
-    init_gemini(GEMINI_API_KEY)
+    # init_gemini(GEMINI_API_KEY)
+    pass
 
     # Only initialize timezone for truly new users or users with NULL timezone
     users_needing_tz = await get_users_with_null_timezone()
