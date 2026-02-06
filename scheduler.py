@@ -197,41 +197,43 @@ def setup_scheduler(application):
         job_kwargs={'misfire_grace_time': 300}
     )
     
-    # Smart Alerts
-    # Rain - every hour
-    job_queue.run_repeating(
-        check_rain_alerts, 
-        interval=3600, 
-        first=30,
-        name="rain_alerts",
-        job_kwargs={'misfire_grace_time': 60}
-    )
+    # Smart Alerts - DISABLED due to user feedback (spam)
+    # They were firing too frequently without sufficient state tracking.
     
-    # UV - every 3 hours (optimized from hourly)
-    job_queue.run_repeating(
-        check_uv_alerts, 
-        interval=10800,  # 3 hours instead of 1
-        first=40,
-        name="uv_alerts",
-        job_kwargs={'misfire_grace_time': 120}
-    )
+    # Rain - every hour (DISABLED)
+    # job_queue.run_repeating(
+    #     check_rain_alerts, 
+    #     interval=3600, 
+    #     first=30,
+    #     name="rain_alerts",
+    #     job_kwargs={'misfire_grace_time': 60}
+    # )
     
-    # Air Quality - every 6 hours
-    job_queue.run_repeating(
-        check_air_quality_alerts, 
-        interval=21600, 
-        first=50,
-        name="air_quality_alerts",
-        job_kwargs={'misfire_grace_time': 180}
-    )
+    # UV - every 3 hours (optimized from hourly) (DISABLED)
+    # job_queue.run_repeating(
+    #     check_uv_alerts, 
+    #     interval=10800,  # 3 hours instead of 1
+    #     first=40,
+    #     name="uv_alerts",
+    #     job_kwargs={'misfire_grace_time': 120}
+    # )
     
-    # Severe Weather - every hour
-    job_queue.run_repeating(
-        check_severe_weather, 
-        interval=3600, 
-        first=60,
-        name="severe_weather_alerts",
-        job_kwargs={'misfire_grace_time': 60}
-    )
+    # Air Quality - every 6 hours (DISABLED)
+    # job_queue.run_repeating(
+    #     check_air_quality_alerts, 
+    #     interval=21600, 
+    #     first=50,
+    #     name="air_quality_alerts",
+    #     job_kwargs={'misfire_grace_time': 180}
+    # )
     
-    logger.info("✅ Scheduler configured with 6 jobs.")
+    # Severe Weather - every hour (DISABLED)
+    # job_queue.run_repeating(
+    #     check_severe_weather, 
+    #     interval=3600, 
+    #     first=60,
+    #     name="severe_weather_alerts",
+    #     job_kwargs={'misfire_grace_time': 60}
+    # )
+    
+    logger.info("✅ Scheduler configured. (Smart alerts are disabled)")

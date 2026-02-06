@@ -276,8 +276,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- PHOTO HANDLER ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    await update.message.reply_text("⚠️ Анализ одежды по фото временно отключен.")
+    # Silently ignore photo input as feature is disabled
     return
 
     # Original logic commented out
@@ -521,8 +520,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('state')
     
     if state == 'WAITING_CLOTHING_TEXT':
-        await update.message.reply_text("⚠️ Функция временно отключена.")
         context.user_data['state'] = None
+        return
         """
         await update.message.reply_text("👗 Анализирую описание... ⏳")
         
