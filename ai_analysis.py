@@ -1,17 +1,16 @@
 """
 AI-powered clothing analysis using Google GenAI SDK (v1)
 """
-from google import genai
-from google.genai import types
+from google.genai import Client, types
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
 # Global client
-client: Optional[genai.Client] = None
+client: Optional[Client] = None
 
 # Initialize Gemini
 def init_gemini(api_key: str):
@@ -22,7 +21,7 @@ def init_gemini(api_key: str):
     
     try:
         # Initialize the new V1 client
-        client = genai.Client(api_key=api_key)
+        client = Client(api_key=api_key)
         logger.info("Gemini V1 Client initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize Gemini Client: {e}")
@@ -66,7 +65,7 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     # Models to try (V1 style models)
     candidates = [
         'gemini-2.0-flash',
-        'gemini-2.0-pro-exp-02-05', # Fallback to latest pro experiment if available
+        'gemini-2.0-pro-exp-02-05', 
         'gemini-1.5-flash',
     ]
 
@@ -75,15 +74,6 @@ async def analyze_clothing_photo(photo_bytes: bytes) -> Dict:
     for model_name in candidates:
         try:
             logger.info(f"Attempting analysis with model: {model_name}")
-            
-            # Helper to strip JSON markdown
-            def clean_json(text):
-                text = text.strip()
-                if text.startswith('```'):
-                    text = text.split('```')[1]
-                    if text.startswith('json'):
-                        text = text[4:]
-                return text
 
             # Call API
             response = client.models.generate_content(
