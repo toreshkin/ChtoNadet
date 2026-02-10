@@ -127,7 +127,7 @@ async def generate_weather_message_content(user_id, city_data):
     sens = user.get('temperature_sensitivity', 'normal')
     name = user.get('user_name', 'друг')
     clothing = get_clothing_advice(temp, current['weather'][0]['id'], wind/3.6, sens, name)
-    rec_text = f"<b>👔 Рекомендации:</b>\n{clothing.replace(f'{name}, советую: ', '')}"
+    rec_text = f"<b>👔 Рекомендации:</b>\n{clothing}"
     
     # Insight
     smart_text = get_smart_insight({'temp': temp, 'humidity': humid, 'wind': wind/3.6, 'condition_code': current['weather'][0]['id']})
@@ -804,7 +804,6 @@ def main():
     application.add_handler(CommandHandler("stats", quick_stats))
     application.add_handler(CommandHandler("settings", quick_settings))
     application.add_handler(CommandHandler("help", quick_help))
-    application.add_handler(CommandHandler("admin", admin_command))
     
     application.add_handler(CommandHandler("menu", lambda u,c: u.message.reply_text("Меню:", reply_markup=get_main_menu_keyboard())))
     application.add_handler(CallbackQueryHandler(menu_handler))

@@ -1,6 +1,6 @@
 def get_clothing_advice(temperature: float, condition_id: int, wind_speed: float, sensitivity: str = "normal", name: str = "друг") -> str:
     """
-    Generates clothing recommendations based on weather and user sensitivity.
+    Generates detailed clothing recommendations (headwear, outerwear, footwear).
     """
     
     # Adjust temperature based on sensitivity
@@ -10,40 +10,73 @@ def get_clothing_advice(temperature: float, condition_id: int, wind_speed: float
     elif sensitivity == "heat_sensitive":
         effective_temp += 5
     
-    advice = []
+    # Categories
+    headwear = ""
+    outerwear = ""
+    footwear = ""
+    additional = []
     
-    # Gradient of comments based on Temp
+    # Base logic based on Temp
     if effective_temp < -15:
-        advice.append("🥶 <b>Очень холодно!</b> Нужен толстый пуховик, теплый свитер, шапка, шарф и варежки.")
+        headwear = "Тёплая зимняя шапка и шарф 🧣"
+        outerwear = "Толстый пуховик, тёплый свитер и термобельё 🧥"
+        footwear = "Зимние ботинки с мехом 👢"
+        additional.append("варежки или тёплые перчатки 🧤")
     elif -15 <= effective_temp < -5:
-        advice.append("❄️ <b>Морозно.</b> Надевайте зимнюю куртку или пальто, свитер, шапку и перчатки.")
+        headwear = "Зимняя шапка 🧢"
+        outerwear = "Зимняя куртка или пальто, свитер 🧥"
+        footwear = "Зимние ботинки 🥾"
+        additional.append("перчатки 🧤")
     elif -5 <= effective_temp < 5:
-        advice.append("🧥 <b>Прохладно.</b> Подойдет теплая куртка и легкий свитер.")
+        headwear = "Лёгкая шапка (по желанию) 🧢"
+        outerwear = "Тёплая куртка и лёгкий свитер 🧥"
+        footwear = "Ботинки или утеплённые кроссовки 👟"
     elif 5 <= effective_temp < 15:
-        advice.append("🌤 <b>Свежо.</b> Надевайте демисезонную куртку, худи или плащ.")
+        outerwear = "Демисезонная куртка, худи или плащ 🧥"
+        footwear = "Кроссовки или туфли 👟"
     elif 15 <= effective_temp < 20:
-        advice.append("😌 <b>Комфортно.</b> Легкая куртка, пиджак или кофта.")
+        outerwear = "Лёгкая куртка, ветровка или плотная кофта 🧥"
+        footwear = "Кроссовки или лоферы 👟"
     elif 20 <= effective_temp < 25:
-        advice.append("😎 <b>Тепло.</b> Футболка, джинсы или легкое платье.")
+        outerwear = "Футболка с длинным рукавом или рубашка 👕"
+        footwear = "Лёгкие кроссовки или кеды 👟"
     else: # >= 25
-        advice.append("🥵 <b>Жарко!</b> Шорты, майка, сандалии. Одевайтесь максимально легко.")
+        outerwear = "Футболка, шорты или лёгкое платье 👕"
+        footwear = "Сандалии или максимально лёгкие кеды 👡"
 
     # Precipitation handling
     if 200 <= condition_id < 600:
-        advice.append("\n☔️ Ожидается дождь/гроза. <b>Не забудьте зонт</b> и непромокаемую обувь!")
+        additional.append("<b>возьмите зонт</b> ☔️")
+        footwear = "Непромокаемая обувь ☔️"
     elif 600 <= condition_id < 700:
-        advice.append("\n🌨 Возможен снег. Обувь должна быть теплой и не скользкой.")
+        headwear = "Тёплая шапка ❄️"
+        additional.append("перчатки 🧤")
+        footwear = "Тёплая и не скользкая обувь ❄️"
     
     # Wind handling
     if wind_speed > 7.0: # m/s
-        advice.append("\n💨 <b>Сильный ветер.</b> Лучше надеть непродуваемую куртку или ветровку.")
+        outerwear = "Непродуваемая ветровка или плотная куртка 💨"
+        if not headwear and effective_temp < 15:
+            headwear = "Лёгкая шапка или капюшон 🧢"
 
-    return f"{name}, советую: " + " ".join(advice)
+    advice_parts = []
+    if headwear:
+        advice_parts.append(f"🧢 <b>Голова:</b> {headwear}")
+    if outerwear:
+        advice_parts.append(f"🧥 <b>Верх:</b> {outerwear}")
+    if footwear:
+        advice_parts.append(f"👟 <b>Обувь:</b> {footwear}")
+    if additional:
+        advice_parts.append(f"➕ <b>Дополнительно:</b> {', '.join(additional)}")
 
-def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str, name: str) -> str:
+    return "\n".join(advice_parts)
+
+def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str, name: str, uv_index: int = None, aqi_data: dict = None) -> str:
     """
     Formats the daily forecast message.
     """
+    from analytics import format_uv_recommendation, format_aqi_message
+
     list_data = forecast_data.get('list', [])
     if not list_data:
         return "❌ Не удалось получить прогноз."
@@ -65,6 +98,13 @@ def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str,
         f"💨 <b>Ветер:</b> {curr_wind:.1f} км/ч\n"
         f"💧 <b>Влажность:</b> {curr_humid}%\n"
     )
+
+    if uv_index is not None:
+        header += f"☀️ <b>УФ-индекс:</b> {uv_index}\n"
+    
+    if aqi_data and 'aqi_val' in aqi_data:
+        aqi_val = aqi_data['aqi_val']
+        header += f"🌫️ <b>AQI:</b> {aqi_val}\n"
 
     # Forecast periods
     periods_text = "\n📅 <b>Прогноз на день:</b>\n"
@@ -106,7 +146,18 @@ def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str,
     # Clothing advice
     clothing = get_clothing_advice(general_clothing_temp, general_id, general_wind, sensitivity, name)
     
-    return f"{header}{periods_text}\n👔 <b>Рекомендации:</b>\n{clothing}"
+    # UV and AQI details (optional, but requested for morning notification)
+    details = ""
+    if uv_index is not None or aqi_data:
+        details = "\n📊 <b>Дополнительно:</b>\n"
+        if uv_index is not None:
+             uv_text = format_uv_recommendation(uv_index).split("\n", 1)[1] # Skip the first line as index is in header
+             details += uv_text + "\n"
+        if aqi_data:
+             aqi_text = format_aqi_message(aqi_data.get('aqi_val', 0))
+             details += aqi_text + "\n"
+
+    return f"{header}{periods_text}\n{details}\n👔 <b>Рекомендации:</b>\n{clothing}"
 
 def get_weather_emoji(code):
     """Maps OWM condition ID to emoji."""

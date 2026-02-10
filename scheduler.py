@@ -6,7 +6,7 @@ from database import (
     get_all_active_users, update_last_notification, get_user_cities, 
     save_weather_history, get_primary_city
 )
-from weather import get_forecast
+from weather import get_forecast, get_uv_index, get_air_quality
 from recommendations import format_daily_forecast
 from smart_alerts import check_rain_alerts, check_uv_alerts, check_air_quality_alerts, check_severe_weather
 
@@ -78,7 +78,11 @@ async def send_daily_notifications(context: ContextTypes.DEFAULT_TYPE):
                 if not forecast:
                     continue
 
-                content = format_daily_forecast(forecast, sensitivity, city_name, name)
+                # Fetch UV and AQI for morning notification
+                uv = await get_uv_index(city_name)
+                aqi = await get_air_quality(city_name)
+
+                content = format_daily_forecast(forecast, sensitivity, city_name, name, uv_index=uv, aqi_data=aqi)
                 greeting = get_greeting(name, user_local_time.hour)
                 
                 message = f"{greeting}\n\n{content}"
