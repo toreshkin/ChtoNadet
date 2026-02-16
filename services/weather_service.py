@@ -27,7 +27,7 @@ async def generate_weather_message_content(user_id, city_data):
     comp_data = await get_weather_comparison(user_id, city_name)
     if comp_data:
         comp_text = generate_comparison_text(current['main']['temp'], comp_data['temp'])
-        comp_text = f"<i>{comp_text}</i>"
+        comp_text = f"<blockquote>{comp_text}</blockquote>"
     
     # Save NEW snapshot
     try:
@@ -44,27 +44,60 @@ async def generate_weather_message_content(user_id, city_data):
     # Details
     wind = current['wind']['speed'] * 3.6 # km/h
     humid = current['main']['humidity']
+    pressure = current['main'].get('pressure', 0)
     aqi_val = aqi_data.get('aqi_val', 'N/A') if aqi_data else 'N/A'
     
     # Recommendations
     sens = user.get('temperature_sensitivity', 'normal')
     name = user.get('user_name', 'друг')
     clothing = get_clothing_advice(temp, current['weather'][0]['id'], wind/3.6, sens, name)
-    rec_text = f"<b>👔 Рекомендации:</b>\n{clothing}"
+    
+    # Activity suggestions
+    from analytics import suggest_activities
+    activities = suggest_activities({
+        'temp': temp,
+        'condition_code': current['weather'][0]['id'],
+        'wind': wind/3.6,
+        'precipitation': 200 <= current['weather'][0]['id'] < 700
+    })
     
     # Insight
     smart_text = get_smart_insight({'temp': temp, 'humidity': humid, 'wind': wind/3.6, 'condition_code': current['weather'][0]['id']})
     
-    text = (
-        f"{emoji_icon} <b>Погода в городе: {city_name}</b>\n\n"
-        f"🌡️ <b>Температура:</b> {temp:+.1f}°C (ощущается как {feels:+.1f}°C)\n"
-        f"☁️ <b>Условия:</b> {cond}\n"
-        f"{comp_text}\n\n"
-        f"💨 <b>Ветер:</b> {wind:.1f} км/ч\n"
-        f"💧 <b>Влажность:</b> {humid}%\n"
-        f"☀️ <b>УФ-индекс:</b> {uv if uv is not None else 'N/A'}\n"
-        f"🌫️ <b>AQI:</b> {aqi_val}\n\n"
-        f"💡 <i>{smart_text}</i>\n\n"
-        f"{rec_text}"
-    )
+    # Build beautiful message
+    text = f"""<b>{emoji_icon} Погода в городе: {city_name}</b>
+
+<b>🌡 Температура</b>
+├ Сейчас: <b>{temp:+.1f}°C</b>
+└ Ощущается: <b>{feels:+.1f}°C</b>
+
+<b>☁️ Условия:</b> {cond}
+{comp_text}
+
+<b>📊 Детали</b>
+├ 💨 Ветер: {wind:.1f} км/ч
+├ 💧 Влажность: {humid}%
+├ 🌡 Давление: {pressure} мбар
+├ ☀️ УФ-индекс: {uv if uv is not None else 'N/A'}
+└ 🌫️ AQI: {aqi_val}"""
+
+    if smart_text:
+        text += f"\n\n💡 <i>{smart_text}</i>"
+    
+    text += f"\n\n<b>👔 Рекомендации по одежде</b>\n{clothing}"
+    
+    if activities:
+        activities_text = "\n".join(f"  • {act}" for act in activities[:3])
+        text += f"\n\n<b>🎯 Чем заняться</b>\n{activities_text}"
+    
+    # Add streak info
+    from streak import get_user_streak
+    try:
+        streak_data = await get_user_streak(user_id)
+        if streak_data and streak_data.get('current_streak', 0) > 0:
+            streak = streak_data['current_streak']
+            text += f"\n\n🔥 Начало серии! Проверяйте погоду каждый день, чтобы увеличить счётчик."
+    except:
+        pass
+    
     return text
