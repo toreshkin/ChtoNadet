@@ -50,7 +50,7 @@ async def generate_weather_message_content(user_id, city_data):
     sens = user.get('temperature_sensitivity', 'normal')
     name = user.get('user_name', 'друг')
     clothing = get_clothing_advice(temp, current['weather'][0]['id'], wind/3.6, sens, name)
-    rec_text = f"<b>\ud83d\udc54 Рекомендации:</b>\n{clothing}"
+    rec_text = f"<b>👔 Рекомендации:</b>\n{clothing}"
     
     # Insight
     smart_text = get_smart_insight({'temp': temp, 'humidity': humid, 'wind': wind/3.6, 'condition_code': current['weather'][0]['id']})
