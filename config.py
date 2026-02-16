@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 # Validate critical API keys
 if not TELEGRAM_BOT_TOKEN or len(TELEGRAM_BOT_TOKEN) < 20:
-    raise ValueError("❌ Invalid or missing TELEGRAM_BOT_TOKEN. Please check your .env file.")
+    logger.warning("⚠️ TELEGRAM_BOT_TOKEN is missing or invalid. Bot features will not work.")
 
 if not WEATHERAPI_KEY or len(WEATHERAPI_KEY) < 10:
-    raise ValueError("❌ Invalid or missing WEATHERAPI_KEY. Please check your .env file.")
+    logger.warning("⚠️ WEATHERAPI_KEY is missing or invalid. Weather features will not work.")
 
 logger.info("✅ Configuration loaded successfully.")
