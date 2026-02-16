@@ -17,9 +17,13 @@ from handlers.weather import weather_now_handler, weather_details_handler
 from handlers.stats import show_stats_handler
 from handlers.settings import (
     settings_main_handler, notification_prefs_handler, toggle_notification_handler,
-    sensitivity_menu_handler, set_sensitivity_handler
+    sensitivity_menu_handler, set_sensitivity_handler,
+    change_time_handler, change_name_handler
 )
-from handlers.cities import list_cities_handler, set_primary_city_handler, ask_add_city_handler
+from handlers.cities import (
+    list_cities_handler, set_primary_city_handler, 
+    ask_add_city_handler, remove_city_menu_handler, delete_city_handler
+)
 from handlers.menu import main_menu_callback_handler, help_handler
 from handlers.text_input import handle_text_input
 
@@ -28,7 +32,8 @@ from database import init_db
 from keyboards import (
     WEATHER_NOW, REFRESH_WEATHER, WEATHER_DETAILS, SETTINGS, 
     WEATHER_STATS, STATS, HELP, BACK_TO_MENU, NOTIFICATION_PREFS,
-    LIST_CITIES, ADD_CITY, CHANGE_TIMEZONE, CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME
+    LIST_CITIES, ADD_CITY, CHANGE_TIMEZONE, CHANGE_TIME, CHANGE_SENSITIVITY, CHANGE_NAME,
+    REMOVE_CITY
 )
 from timezones import TIMEZONE_PREFIX, TIMEZONE_OTHER
 
@@ -71,7 +76,8 @@ def main():
         },
         fallbacks=[CommandHandler('cancel', cancel)],
         name="registration_conv",
-        persistent=False
+        persistent=False,
+        allow_reentry=True  # Разрешаем перезапуск регистрации в любой момент
     )
     application.add_handler(conv_handler)
 
@@ -93,10 +99,18 @@ def main():
     application.add_handler(CallbackQueryHandler(main_menu_callback_handler, pattern=f"^{BACK_TO_MENU}$"))
     application.add_handler(CallbackQueryHandler(list_cities_handler, pattern=f"^{LIST_CITIES}$"))
     application.add_handler(CallbackQueryHandler(set_primary_city_handler, pattern="^view_city_"))
+    
+    # City Management
     application.add_handler(CallbackQueryHandler(ask_add_city_handler, pattern=f"^{ADD_CITY}$"))
-    application.add_handler(CallbackQueryHandler(ask_timezone_handler, pattern=f"^({TIMEZONE_PREFIX}|{TIMEZONE_OTHER}|TZ_BACK_MAIN)"))
+    application.add_handler(CallbackQueryHandler(remove_city_menu_handler, pattern=f"^{REMOVE_CITY}$"))
+    application.add_handler(CallbackQueryHandler(delete_city_handler, pattern="^delete_city_"))
+    
+    # Timezone & Settings
+    application.add_handler(CallbackQueryHandler(ask_timezone_handler, pattern=f"^({TIMEZONE_PREFIX}|{TIMEZONE_OTHER}|TZ_BACK_MAIN|{CHANGE_TIMEZONE})"))
     application.add_handler(CallbackQueryHandler(sensitivity_menu_handler, pattern=f"^{CHANGE_SENSITIVITY}$"))
     application.add_handler(CallbackQueryHandler(set_sensitivity_handler, pattern="^sens_"))
+    application.add_handler(CallbackQueryHandler(change_time_handler, pattern=f"^{CHANGE_TIME}$"))
+    application.add_handler(CallbackQueryHandler(change_name_handler, pattern=f"^{CHANGE_NAME}$"))
 
     # 4. Text Handlers (Loose inputs like /weather Berlin or menu replies)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))

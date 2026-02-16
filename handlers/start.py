@@ -7,7 +7,7 @@ import html
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 
-from database import upsert_user, add_city, get_user, get_primary_city
+from database import upsert_user, add_city, get_user, get_primary_city, update_user_timezone
 from services.weather_service import generate_weather_message_content
 from weather import get_coordinates
 from streak import update_streak, get_streak_message
@@ -23,6 +23,9 @@ ASK_NAME, ASK_TIMEZONE, ASK_LOCATION = range(3)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало регистрации или приветствие существующего пользователя."""
     try:
+        # СБРОС состояние при каждом /start
+        context.user_data.clear()
+        
         user_id = update.effective_user.id
         username = update.effective_user.username or "unknown"
         
@@ -118,7 +121,7 @@ async def ask_timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             return ASK_TIMEZONE
         
         # Вернуться к основному списку
-        if data == "TZ_BACK_MAIN":
+        if data == "TZ_BACK_MAIN" or data == "change_timezone":
             await query.edit_message_text(
                 "🌍 <b>Выберите ваш часовой пояс:</b>",
                 reply_markup=get_timezone_keyboard(),
@@ -129,23 +132,34 @@ async def ask_timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # Выбран конкретный часовой пояс
         if data.startswith(TIMEZONE_PREFIX):
             tz = data.replace(TIMEZONE_PREFIX, "")
-            context.user_data['temp_timezone'] = tz
             tz_display = get_timezone_display_name(tz)
-            
             logger.info(f"✅ User {user_id} выбрал timezone: {tz}")
-            
-            await query.edit_message_text(f"✅ <b>Выбран:</b> {tz_display}", parse_mode='HTML')
-            await query.message.reply_text(
-                "📍 <b>Последний шаг!</b>\n\n"
-                "Отправьте название вашего города (например, «Москва») или "
-                "нажмите кнопку для отправки геолокации:",
-                reply_markup=ReplyKeyboardMarkup(
-                    [[KeyboardButton("📍 Отправить мою локацию", request_location=True)]],
-                    resize_keyboard=True
-                ),
-                parse_mode='HTML'
-            )
-            return ASK_LOCATION
+
+            # Проверяем, это регистрация или настройки (по наличию temp_name)
+            if context.user_data.get('temp_name'):
+                # РЕГИСТРАЦИЯ
+                context.user_data['temp_timezone'] = tz
+                await query.edit_message_text(f"✅ <b>Выбран:</b> {tz_display}", parse_mode='HTML')
+                await query.message.reply_text(
+                    "📍 <b>Последний шаг!</b>\n\n"
+                    "Отправьте название вашего города (например, «Москва») или "
+                    "нажмите кнопку для отправки геолокации:",
+                    reply_markup=ReplyKeyboardMarkup(
+                        [[KeyboardButton("📍 Отправить мою локацию", request_location=True)]],
+                        resize_keyboard=True
+                    ),
+                    parse_mode='HTML'
+                )
+                return ASK_LOCATION
+            else:
+                # НАСТРОЙКИ (смена таймзоны)
+                await update_user_timezone(user_id, tz)
+                await query.edit_message_text(
+                    f"✅ <b>Часовой пояс обновлен:</b>\n{tz_display}\n\n"
+                    "Теперь уведомления будут приходить по этому времени.",
+                    parse_mode='HTML'
+                )
+                return ConversationHandler.END
         
         return ASK_TIMEZONE
         

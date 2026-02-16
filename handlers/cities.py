@@ -36,3 +36,35 @@ async def ask_add_city_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     await query.message.reply_text("🔎 Введите название города:")
     context.user_data['state'] = 'WAITING_CITY'
+
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from database import remove_city
+
+async def remove_city_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = update.effective_user.id
+    await query.answer()
+    
+    cities = await get_user_cities(user_id)
+    keyboard = []
+    for city in cities:
+        keyboard.append([InlineKeyboardButton(f"🗑️ {city['city_name']}", callback_data=f"delete_city_{city['id']}")])
+    
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="list_cities")])
+    
+    await query.edit_message_text(
+        "🗑 <b>Выберите город для удаления:</b>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
+
+async def delete_city_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = update.effective_user.id
+    city_id = int(query.data.replace("delete_city_", ""))
+    
+    await remove_city(user_id, city_id)
+    await query.answer("✅ Город удален", show_alert=True)
+    
+    # Return to city list
+    await list_cities_handler(update, context)

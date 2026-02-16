@@ -80,3 +80,15 @@ async def set_sensitivity_handler(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), 
         parse_mode='HTML'
     )
+
+async def change_time_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("⏰ Введите время для утреннего прогноза (например, 08:30):")
+    context.user_data['state'] = 'WAITING_TIME'
+
+async def change_name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("👤 Как мне к вам обращаться?")
+    context.user_data['state'] = 'WAITING_NAME'

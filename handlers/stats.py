@@ -33,11 +33,15 @@ async def show_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     caption = f"📊 <b>Статистика: {city['city_name']}</b>\nТренды температуры за неделю."
     
-    if query:
-        await query.message.reply_photo(photo=open(graph_path, 'rb'), caption=caption, parse_mode='HTML', reply_markup=get_back_keyboard())
-    else:
-        await update.message.reply_photo(photo=open(graph_path, 'rb'), caption=caption, parse_mode='HTML')
+    # Read into memory to allow file deletion
+    with open(graph_path, 'rb') as f:
+        photo_bytes = f.read()
         
     # Cleanup graph
     if os.path.exists(graph_path):
         os.remove(graph_path)
+
+    if query:
+        await query.message.reply_photo(photo=photo_bytes, caption=caption, parse_mode='HTML', reply_markup=get_back_keyboard())
+    else:
+        await update.message.reply_photo(photo=photo_bytes, caption=caption, parse_mode='HTML')

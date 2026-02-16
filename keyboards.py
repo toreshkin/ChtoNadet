@@ -1,5 +1,8 @@
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
+# Импортируем timezone клавиатуры из модуля timezones
+from timezones import get_timezone_keyboard, get_extended_timezone_keyboard
+
 # Constants for Callback Data
 WEATHER_NOW = "weather_now"
 SETTINGS = "settings"
