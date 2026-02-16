@@ -61,7 +61,7 @@ def check_imports():
         logger.info("✅ weather - OK")
         
         # Other services
-        from streak import update_streak, get_streak_message
+        from streak import update_streak, get_streak_message, get_streak_info
         logger.info("✅ streak - OK")
         
         from scheduler import setup_scheduler

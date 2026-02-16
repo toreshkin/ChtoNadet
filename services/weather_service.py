@@ -91,9 +91,9 @@ async def generate_weather_message_content(user_id, city_data):
         text += f"\n\n<b>🎯 Чем заняться</b>\n{activities_text}"
     
     # Add streak info
-    from streak import get_user_streak
+    from streak import get_streak_info
     try:
-        streak_data = await get_user_streak(user_id)
+        streak_data = await get_streak_info(user_id)
         if streak_data and streak_data.get('current_streak', 0) > 0:
             streak = streak_data['current_streak']
             text += f"\n\n🔥 Начало серии! Проверяйте погоду каждый день, чтобы увеличить счётчик."
