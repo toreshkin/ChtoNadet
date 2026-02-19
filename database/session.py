@@ -1,8 +1,14 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from config import DATABASE_PATH
 
-# If DATABASE_PATH doesn't start with sqlite+aiosqlite://, we should add it if it's a file
-if not DATABASE_PATH.startswith("sqlite") and not DATABASE_PATH.startswith("postgresql"):
+# Handle different database types
+if DATABASE_PATH.startswith("postgres"):
+    # Convert postgres:// to postgresql+asyncpg:// for SQLAlchemy async support
+    # Handle both common variants (postgres:// and postgresql://)
+    DB_URL = DATABASE_PATH.replace("postgres://", "postgresql+asyncpg://", 1)
+    if not DB_URL.startswith("postgresql+asyncpg://"):
+         DB_URL = DB_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif not DATABASE_PATH.startswith("sqlite"):
     DB_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"
 else:
     DB_URL = DATABASE_PATH
