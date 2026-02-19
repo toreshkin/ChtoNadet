@@ -388,3 +388,6 @@ telegram.error.InvalidToken: The token `токен сюда` was rejected by the
 2026-02-16 11:27:04,343 - config - WARNING - ⚠️ TELEGRAM_BOT_TOKEN is missing or invalid. Bot features will not work.
 2026-02-16 11:27:04,343 - config - WARNING - ⚠️ WEATHERAPI_KEY is missing or invalid. Weather features will not work.
 2026-02-16 11:27:04,348 - config - INFO - ✅ Configuration loaded successfully.
+2026-02-19 09:07:55,526 - config - WARNING - ⚠️ TELEGRAM_BOT_TOKEN is missing or invalid. Bot features will not work.
+2026-02-19 09:07:55,526 - config - WARNING - ⚠️ WEATHERAPI_KEY is missing or invalid. Weather features will not work.
+2026-02-19 09:07:55,526 - config - INFO - ✅ Configuration loaded successfully.

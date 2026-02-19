@@ -8,7 +8,26 @@ load_dotenv()
 # Configuration
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "weather_bot.db")
+DATABASE_PATH = os.getenv("DATABASE_PATH", "data/weather_bot.db")
+
+# Migration logic: if old db exists in root and NOT in data/, move it
+if DATABASE_PATH == "data/weather_bot.db" and os.path.exists("weather_bot.db") and not os.path.exists("data/weather_bot.db"):
+    if not os.path.exists("data"):
+        os.makedirs("data", exist_ok=True)
+    import shutil
+    try:
+        shutil.copy2("weather_bot.db", "data/weather_bot.db")
+        # Keep old one for safety as backup, or rename it
+        os.rename("weather_bot.db", "weather_bot.db.bak")
+    except Exception:
+        pass
+
+# Ensure directory exists if it's a file path
+if not DATABASE_PATH.startswith("sqlite") and not DATABASE_PATH.startswith("postgresql"):
+    db_dir = os.path.dirname(os.path.abspath(DATABASE_PATH))
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 ADMIN_ID = os.getenv("ADMIN_ID") # Add this to .env to see bot stats
 

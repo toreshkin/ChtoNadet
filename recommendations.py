@@ -127,11 +127,11 @@ def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str,
         header += f"🌫️ <b>AQI:</b> {aqi_val}\n"
 
     # Forecast periods
-    periods_text = "\n📅 <b>Прогноз на день:</b>\n"
+    periods_text = "\n📅 <b>Прогноз на день</b>\n"
     target_times = {
-        "09:00:00": "🌅 Утро (09:00)",
-        "15:00:00": "☀️ День (15:00)",
-        "21:00:00": "🌇 Вечер (21:00)"
+        "09:00:00": "🌅 Утро",
+        "15:00:00": "☀️ День",
+        "21:00:00": "🌇 Вечер"
     }
     
     found_periods = 0
@@ -148,7 +148,7 @@ def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str,
             temp = item['main']['temp']
             p_emoji = get_weather_emoji(item['weather'][0]['id'])
             
-            periods_text += f"{p_emoji} {period_label}: {temp:+.0f}°C\n"
+            periods_text += f"├ {period_label}: <b>{temp:+.0f}°C</b> {p_emoji}\n"
             
             # Use day temperature for main recommendation if available
             if time_part == "15:00:00":

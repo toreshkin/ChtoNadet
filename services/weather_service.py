@@ -64,12 +64,37 @@ async def generate_weather_message_content(user_id, city_data):
     # Insight
     smart_text = get_smart_insight({'temp': temp, 'humidity': humid, 'wind': wind/3.6, 'condition_code': current['weather'][0]['id']})
     
+# 4. Build Forecast Periods Text
+    periods_text = "\n\n📅 <b>Прогноз на день</b>\n"
+    target_times = {
+        "09:00:00": "🌅 Утро",
+        "15:00:00": "☀️ День",
+        "21:00:00": "🌇 Вечер"
+    }
+    found_periods = 0
+    if forecast and 'list' in forecast:
+        for item in forecast['list']:
+            time_part = item.get('dt_txt', '').split(' ')[1]
+            if time_part in target_times:
+                p_label = target_times[time_part]
+                p_temp = item['main']['temp']
+                p_emoji = get_weather_emoji(item['weather'][0]['id'])
+                periods_text += f"├ {p_label}: <b>{p_temp:+.0f}°C</b> {p_emoji}\n"
+                found_periods += 1
+    
+    if found_periods == 0:
+        periods_text = ""
+    else:
+        # Clean up last line of periods if needed, or just keep it
+        pass
+
     # Build beautiful message
     text = f"""<b>{emoji_icon} Погода в городе: {city_name}</b>
 
 <b>🌡 Температура</b>
 ├ Сейчас: <b>{temp:+.1f}°C</b>
 └ Ощущается: <b>{feels:+.1f}°C</b>
+{periods_text}
 
 <b>☁️ Условия:</b> {cond}
 {comp_text}

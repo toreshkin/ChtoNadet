@@ -5,12 +5,11 @@ services:
     build: .
     volumes:
       - .:/app
-      - weather_data:/app/data
+      - ./data:/app/data
     env_file:
       - .env
     environment:
       - DATABASE_PATH=/app/data/weather_bot.db
     restart: always
 
-volumes:
-  weather_data:
+# No named volumes needed for simple bind mount
