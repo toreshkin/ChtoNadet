@@ -9,7 +9,13 @@ logger = logging.getLogger(__name__)
 
 async def init_db():
     """Initializes the database and performs migrations."""
-    pass
+    from .session import engine
+    from .models import Base
+    async with engine.begin() as conn:
+        # This will create tables if they don't exist
+        # Useful for fresh deployments on Railway
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("🗄 База данных инициализирована (таблицы проверены/созданы)")
 
 async def upsert_user(user_id: int, username: str, user_name: str = "друг", timezone: str = 'Europe/Moscow'):
     async with AsyncSessionLocal() as session:
