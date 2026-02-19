@@ -1,11 +1,23 @@
 import logging
 import datetime
+from contextlib import asynccontextmanager
 from sqlalchemy import select, update, delete, desc, func
 from .session import AsyncSessionLocal
 from .models import User, City, WeatherHistory, NotificationPreference, WeatherSnapshot, WardrobeItem
 from config import DATABASE_PATH
 
 logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def get_session():
+    """Get database session for queries"""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 async def init_db():
     """Initializes the database and performs migrations."""
@@ -190,7 +202,7 @@ async def get_weather_comparison(user_id, city):
             select(WeatherSnapshot)
             .where(WeatherSnapshot.user_id == user_id, WeatherSnapshot.city_name == city)
             .where(WeatherSnapshot.timestamp.between(low, high))
-            .order_by(func.abs(func.julianday(WeatherSnapshot.timestamp) - func.julianday(target)))
+            .order_by(func.abs(func.extract('epoch', WeatherSnapshot.timestamp) - func.extract('epoch', target)) if DATABASE_PATH.startswith("postgres") else func.abs(func.julianday(WeatherSnapshot.timestamp) - func.julianday(target)))
             .limit(1)
         )
         row = result.scalar_one_or_none()

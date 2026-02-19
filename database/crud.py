@@ -157,11 +157,12 @@ async def get_weather_comparison(session: AsyncSession, user_id, city):
     low = target - datetime.timedelta(hours=1)
     high = target + datetime.timedelta(hours=1)
     
+    from config import DATABASE_PATH
     result = await session.execute(
         select(WeatherSnapshot)
         .where(WeatherSnapshot.user_id == user_id, WeatherSnapshot.city_name == city)
         .where(WeatherSnapshot.timestamp.between(low, high))
-        .order_by(func.abs(func.julianday(WeatherSnapshot.timestamp) - func.julianday(target)))
+        .order_by(func.abs(func.extract('epoch', WeatherSnapshot.timestamp) - func.extract('epoch', target)) if DATABASE_PATH.startswith("postgres") else func.abs(func.julianday(WeatherSnapshot.timestamp) - func.julianday(target)))
         .limit(1)
     )
     return result.scalar_one_or_none()
