@@ -3,11 +3,21 @@ from config import DATABASE_PATH
 
 # Handle different database types
 if DATABASE_PATH.startswith("postgres"):
-    # Convert postgres:// to postgresql+asyncpg:// for SQLAlchemy async support
-    # Handle both common variants (postgres:// and postgresql://)
-    DB_URL = DATABASE_PATH.replace("postgres://", "postgresql+asyncpg://", 1)
-    if not DB_URL.startswith("postgresql+asyncpg://"):
-         DB_URL = DB_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Fix Railway's "postgres://" -> "postgresql+asyncpg://"
+    curr_url = DATABASE_PATH
+    if curr_url.startswith("postgres://"):
+        curr_url = curr_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif curr_url.startswith("postgresql://"):
+        curr_url = curr_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif not curr_url.startswith("postgresql+asyncpg://"):
+        # Just in case it's something else
+        curr_url = curr_url.replace("://", "+asyncpg://", 1)
+    DB_URL = curr_url
+    
+    # Log the connection (hiding password)
+    import re
+    masked_url = re.sub(r':([^/@]+)@', ':****@', DB_URL)
+    print(f"🔌 Connecting to database: {masked_url}")
 elif not DATABASE_PATH.startswith("sqlite"):
     DB_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"
 else:

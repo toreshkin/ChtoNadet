@@ -9,7 +9,11 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") 
 # Prioritize DATABASE_URL (for Railway) then fallback to DATABASE_PATH or default SQLite
-DATABASE_PATH = os.getenv("DATABASE_URL") or os.getenv("DATABASE_PATH", "data/weather_bot.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    DATABASE_PATH = DATABASE_URL.strip()
+else:
+    DATABASE_PATH = os.getenv("DATABASE_PATH", "data/weather_bot.db").strip()
 
 # Migration logic: if old db exists in root and NOT in data/, move it (ONLY FOR SQLITE)
 if not DATABASE_PATH.startswith("postgres"):
