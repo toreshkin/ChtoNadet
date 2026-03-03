@@ -5,6 +5,7 @@ from config import WEATHERAPI_KEY
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.weatherapi.com/v1"
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 def map_condition_code(code: int) -> int:
     """Maps WeatherAPI condition codes to approximate OWM codes."""
@@ -15,7 +16,7 @@ def map_condition_code(code: int) -> int:
         return 200
     
     # 3xx Drizzle
-    if code in [1063, 1072, 1150, 1153, 1168, 1171, 1180, 1183, 1186, 1189, 1198, 1201, 1240, 1243]:
+    if code in [1063, 1072, 1150, 1153, 1168, 1171, 1180, 1183, 1186, 1189, 1198, 1201, 1240]:
         return 300
     
     # 5xx Rain (Stronger rain)
@@ -35,7 +36,7 @@ def map_condition_code(code: int) -> int:
 
 async def get_coordinates(city_name: str):
     """Gets coordinates for a city name matching the interface expected."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         params = {
             "key": WEATHERAPI_KEY,
             "q": city_name,
@@ -59,7 +60,7 @@ async def get_coordinates(city_name: str):
 
 async def get_current_weather(lat: float = None, lon: float = None, city: str = None):
     """Fetches current weather and transforms to OWM format."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         q_param = f"{lat},{lon}" if lat is not None and lon is not None else city
         if not q_param:
             return None
@@ -93,7 +94,8 @@ async def get_current_weather(lat: float = None, lon: float = None, city: str = 
                     'main': {
                         'temp': curr.get('temp_c'),
                         'feels_like': curr.get('feelslike_c'),
-                        'humidity': curr.get('humidity')
+                        'humidity': curr.get('humidity'),
+                        'pressure': curr.get('pressure_mb', 0)
                     },
                     'weather': [{
                         'description': condition.get('text'),
@@ -102,7 +104,7 @@ async def get_current_weather(lat: float = None, lon: float = None, city: str = 
                     'wind': {
                         'speed': curr.get('wind_kph', 0) / 3.6
                     },
-                    'timezone': 0 # Not used critically, simplified
+                    'timezone': 0
                 }
                 return owm_format
                 
@@ -112,7 +114,7 @@ async def get_current_weather(lat: float = None, lon: float = None, city: str = 
 
 async def get_forecast(lat: float = None, lon: float = None, city: str = None):
     """Fetches 1-day forecast and transforms to OWM list format for recommendations."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         q_param = f"{lat},{lon}" if lat is not None and lon is not None else city
         if not q_param:
             return None
@@ -146,8 +148,8 @@ async def get_forecast(lat: float = None, lon: float = None, city: str = None):
                 for hour in hourly_data:
                     # hour['time'] is "YYYY-MM-DD HH:MM"
                     # OWM uses "YYYY-MM-DD HH:MM:SS"
-                    time_str = hour.get('time')
-                    if len(time_str) == 16: # 2024-01-28 06:00
+                    time_str = hour.get('time', '')
+                    if len(time_str) == 16:
                         time_str += ":00"
                     
                     item = {
@@ -175,7 +177,7 @@ async def get_forecast(lat: float = None, lon: float = None, city: str = None):
 
 async def get_air_quality(city: str) -> dict:
     """Fetches air quality data."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         params = {
             "key": WEATHERAPI_KEY,
             "q": city,
@@ -230,7 +232,7 @@ async def get_air_quality(city: str) -> dict:
 
 async def get_uv_index(city: str) -> int:
     """Fetches UV index."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         params = {"key": WEATHERAPI_KEY, "q": city}
         try:
             async with session.get(f"{BASE_URL}/current.json", params=params) as resp:
@@ -246,7 +248,7 @@ async def check_rain_in_next_hours(city: str, hours: int = 2) -> dict:
     Returns dict with {will_rain: bool, start_time: str, intensity: str}
     """
     # Use forecast.json
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         params = {"key": WEATHERAPI_KEY, "q": city, "days": 1, "aqi": "no", "alerts": "no"}
         try:
             async with session.get(f"{BASE_URL}/forecast.json", params=params) as resp:
@@ -290,7 +292,7 @@ async def check_rain_in_next_hours(city: str, hours: int = 2) -> dict:
 
 async def get_severe_weather_alerts(city: str) -> list:
     """Fetches weather alerts."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
         params = {"key": WEATHERAPI_KEY, "q": city, "days": 1, "alerts": "yes"}
         try:
             async with session.get(f"{BASE_URL}/forecast.json", params=params) as resp:

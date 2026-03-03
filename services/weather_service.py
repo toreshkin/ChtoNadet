@@ -2,8 +2,9 @@ import logging
 import datetime
 from database import get_user, save_weather_snapshot, get_weather_comparison
 from weather import get_forecast, get_current_weather, get_uv_index, get_air_quality
-from analytics import generate_comparison_text, get_smart_insight
+from analytics import generate_comparison_text, get_smart_insight, suggest_activities
 from recommendations import get_weather_emoji, get_clothing_advice
+from streak import get_streak_info, get_streak_message
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,6 @@ async def generate_weather_message_content(user_id, city_data):
     clothing = get_clothing_advice(temp, current['weather'][0]['id'], wind/3.6, sens, name)
     
     # Activity suggestions
-    from analytics import suggest_activities
     activities = suggest_activities({
         'temp': temp,
         'condition_code': current['weather'][0]['id'],
@@ -115,16 +115,5 @@ async def generate_weather_message_content(user_id, city_data):
     if activities:
         activities_text = "\n".join(f"  • {act}" for act in activities[:3])
         text += f"\n\n<b>🎯 Чем заняться</b>\n{activities_text}"
-    
-    # Add streak info
-    from streak import get_streak_info, get_streak_message
-    try:
-        streak_data = await get_streak_info(user_id)
-        if streak_data and streak_data.get('current_streak', 0) > 0:
-            streak = streak_data['current_streak']
-            streak_text = get_streak_message(streak)
-            text += f"\n\n{streak_text}"
-    except Exception as streak_err:
-        logger.warning(f"Failed to get streak info: {streak_err}")
     
     return text

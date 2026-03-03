@@ -193,13 +193,13 @@ async def save_weather_snapshot(user_id, city, temp, condition):
     async with AsyncSessionLocal() as session:
         snapshot = WeatherSnapshot(user_id=user_id, city_name=city, temp=temp, condition=condition)
         session.add(snapshot)
-        cutoff = datetime.datetime.now() - datetime.timedelta(hours=48)
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
         await session.execute(delete(WeatherSnapshot).where(WeatherSnapshot.timestamp < cutoff))
         await session.commit()
 
 async def get_weather_comparison(user_id, city):
     async with AsyncSessionLocal() as session:
-        target = datetime.datetime.now() - datetime.timedelta(hours=24)
+        target = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
         low = target - datetime.timedelta(hours=1)
         high = target + datetime.timedelta(hours=1)
         

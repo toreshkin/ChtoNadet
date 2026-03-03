@@ -1,15 +1,13 @@
 import logging
 import datetime
-import traceback
 import pytz
 from telegram.ext import ContextTypes
 from database import (
-    get_all_active_users, update_last_notification, get_user_cities, 
+    get_all_active_users, update_last_notification, 
     save_weather_history, get_primary_city
 )
 from weather import get_forecast, get_uv_index, get_air_quality
 from recommendations import format_daily_forecast
-from smart_alerts import check_rain_alerts, check_uv_alerts, check_air_quality_alerts, check_severe_weather
 
 logger = logging.getLogger(__name__)
 
