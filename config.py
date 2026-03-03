@@ -37,16 +37,6 @@ if not DATABASE_PATH.startswith("postgres"):
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 ADMIN_ID = os.getenv("ADMIN_ID") # Add this to .env to see bot stats
 
-# Logging configuration
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=getattr(logging, LOG_LEVEL),
-    handlers=[
-        logging.FileHandler("bot.log", encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-
 logger = logging.getLogger(__name__)
 
 # Validate critical API keys

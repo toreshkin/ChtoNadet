@@ -172,8 +172,6 @@ async def get_forecast(lat: float = None, lon: float = None, city: str = None):
         except Exception as e:
             logger.error(f"Exception in get_forecast: {e}")
             return None
-            logger.error(f"Exception in get_forecast: {e}")
-            return None
 
 async def get_air_quality(city: str) -> dict:
     """Fetches air quality data."""

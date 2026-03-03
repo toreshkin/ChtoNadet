@@ -32,7 +32,8 @@ async def generate_weather_message_content(user_id, city_data):
     # Save NEW snapshot
     try:
         await save_weather_snapshot(user_id, city_name, current['main']['temp'], current['weather'][0]['description'])
-    except: pass
+    except Exception as snap_err:
+        logger.warning(f"Failed to save weather snapshot: {snap_err}")
 
     # 3. Format Strings
     temp = current['main']['temp']
@@ -64,7 +65,7 @@ async def generate_weather_message_content(user_id, city_data):
     # Insight
     smart_text = get_smart_insight({'temp': temp, 'humidity': humid, 'wind': wind/3.6, 'condition_code': current['weather'][0]['id']})
     
-# 4. Build Forecast Periods Text
+    # 4. Build Forecast Periods Text
     periods_text = "\n\n📅 <b>Прогноз на день</b>\n"
     target_times = {
         "09:00:00": "🌅 Утро",
@@ -116,13 +117,14 @@ async def generate_weather_message_content(user_id, city_data):
         text += f"\n\n<b>🎯 Чем заняться</b>\n{activities_text}"
     
     # Add streak info
-    from streak import get_streak_info
+    from streak import get_streak_info, get_streak_message
     try:
         streak_data = await get_streak_info(user_id)
         if streak_data and streak_data.get('current_streak', 0) > 0:
             streak = streak_data['current_streak']
-            text += f"\n\n🔥 Начало серии! Проверяйте погоду каждый день, чтобы увеличить счётчик."
-    except:
-        pass
+            streak_text = get_streak_message(streak)
+            text += f"\n\n{streak_text}"
+    except Exception as streak_err:
+        logger.warning(f"Failed to get streak info: {streak_err}")
     
     return text

@@ -18,14 +18,23 @@ def generate_comparison_text(today_temp: float, yesterday_temp: float) -> str:
 def generate_weekly_trend_graph(history_data: list) -> str:
     """
     Generates an emoji graph for the last 7 days.
-    history_data: list of dicts with 'date' and 'temp_max' (or avg).
-    Expects data ordered by date ASC or DESC? Usually DESC in db query.
+    history_data: list of dicts with 'date' and 'temp_max'/'temp_avg'.
     """
     if not history_data:
         return ""
         
-    # Sort by date asc
-    history_data = sorted(history_data, key=lambda x: x['date'])
+    # Sort by date asc — handle both string and date objects
+    def get_date_key(x):
+        d = x.get('date')
+        if isinstance(d, str):
+            return datetime.datetime.strptime(d, "%Y-%m-%d").date()
+        elif isinstance(d, datetime.date):
+            return d
+        elif isinstance(d, datetime.datetime):
+            return d.date()
+        return datetime.date.min
+    
+    history_data = sorted(history_data, key=get_date_key)
     
     lines = ["📊 <b>Температура за неделю:</b>"]
     
@@ -36,18 +45,20 @@ def generate_weekly_trend_graph(history_data: list) -> str:
     prev_temp = None
     
     for day in history_data:
-        date_obj = datetime.datetime.strptime(day['date'], "%Y-%m-%d")
+        date_val = day.get('date')
+        if isinstance(date_val, str):
+            date_obj = datetime.datetime.strptime(date_val, "%Y-%m-%d")
+        elif isinstance(date_val, datetime.datetime):
+            date_obj = date_val
+        elif isinstance(date_val, datetime.date):
+            date_obj = datetime.datetime.combine(date_val, datetime.time.min)
+        else:
+            continue
+            
         day_name = days_map[date_obj.weekday()]
-        temp = day['temp_max']
+        temp = day.get('temp_max') or day.get('temp_avg') or 0
         
-        # bar length calculation (base 0C = 0 chars? No, relative)
-        # Simple scale: 1 char per 2 degrees?
-        # Or fixed length + value
-        # Prompt example: "Пн ━━━━━━ 12°C"
-        # Let's use a fixed max width logic or simple mapping.
-        # Let's say 0..30C maps to 0..15 chars.
-        
-        bar_len = max(0, int(temp / 2)) # Simple approximation
+        bar_len = max(0, int(temp / 2)) if temp > 0 else 0
         bar = "━" * bar_len
         
         arrow = ""

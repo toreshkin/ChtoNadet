@@ -13,7 +13,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state = context.user_data.get('state')
     
     # 1. Route main menu reply keyboard buttons
-    # 1. Route main menu reply keyboard buttons
     if text == "🌤 Погода" or text == WEATHER_NOW:
         return await weather_now_handler(update, context)
         
@@ -47,19 +46,38 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Город <b>{text}</b> добавлен!", parse_mode='HTML', reply_markup=get_main_menu_keyboard())
 
     elif state == 'WAITING_TIME':
+        text = text.strip()
         if ":" in text and len(text) == 5:
-            await update_user_field(user_id, 'notification_time', text)
-            context.user_data['state'] = None
-            user = await get_user(user_id)
-            await update.message.reply_text(f"✅ Время уведомлений: {text}", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
+            try:
+                h, m = map(int, text.split(':'))
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    await update_user_field(user_id, 'notification_time', text)
+                    context.user_data['state'] = None
+                    user = await get_user(user_id)
+                    await update.message.reply_text(f"✅ Время уведомлений: {text}", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
+                else:
+                    await update.message.reply_text("❌ Неверное время. Часы 00-23, минуты 00-59. Пример: 08:30")
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат. Нужно ЧЧ:ММ (например, 08:30):")
         else:
             await update.message.reply_text("❌ Неверный формат. Нужно ЧЧ:ММ (например, 08:30):")
 
     elif state == 'WAITING_NAME':
-        if len(text) < 50:
-            await update_user_field(user_id, 'user_name', text)
+        name = text.strip()
+        if 2 <= len(name) <= 50:
+            await update_user_field(user_id, 'user_name', name)
             context.user_data['state'] = None
             user = await get_user(user_id)
-            await update.message.reply_text(f"✅ Теперь я зову вас: {text}", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
+            await update.message.reply_text(f"✅ Теперь я зову вас: {name}", reply_markup=get_settings_keyboard(user['is_active'], user['alerts_enabled']), parse_mode='HTML')
+        elif len(name) < 2:
+            await update.message.reply_text("❌ Имя слишком короткое (минимум 2 символа).")
         else:
-            await update.message.reply_text("❌ Слишком длинное имя.")
+            await update.message.reply_text("❌ Слишком длинное имя (максимум 50 символов).")
+    else:
+        # Unrecognized text — give a helpful response
+        await update.message.reply_text(
+            "🤔 Не совсем понял. Используйте кнопки меню ниже или команды:\n"
+            "/weather — погода\n"
+            "/settings — настройки\n"
+            "/help — помощь"
+        )

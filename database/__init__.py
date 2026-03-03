@@ -114,11 +114,16 @@ async def get_primary_city(user_id: int):
 async def remove_city(user_id: int, city_id: int):
     async with AsyncSessionLocal() as session:
         await session.execute(delete(City).where(City.id == city_id, City.user_id == user_id))
+        # Check remaining cities and ensure one is primary
+        result = await session.execute(
+            select(City)
+            .where(City.user_id == user_id)
+            .order_by(desc(City.is_primary), City.id)
+        )
+        remaining_cities = result.scalars().all()
+        if remaining_cities and not any(c.is_primary for c in remaining_cities):
+            remaining_cities[0].is_primary = True
         await session.commit()
-        cities = await get_user_cities(user_id)
-        if cities and not any(c['is_primary'] for c in cities):
-             await session.execute(update(City).where(City.id == cities[0]['id']).values(is_primary=True))
-             await session.commit()
 
 async def set_primary_city(user_id: int, city_id: int):
     async with AsyncSessionLocal() as session:

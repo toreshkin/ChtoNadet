@@ -44,7 +44,17 @@ async def post_init_logic(application):
     """Actions after application starts."""
     await init_db()
     setup_scheduler(application)
-    logger.info("🚀 Bot is up and running!")
+    
+    # Log startup diagnostics
+    try:
+        from database import get_all_active_users
+        users = await get_all_active_users()
+        logger.info(f"🚀 Bot is up and running! Active users: {len(users)}")
+        for u in users:
+            logger.info(f"  👤 User {u['user_id']}: notif_time={u.get('notification_time')}, tz={u.get('timezone')}, active={u.get('is_active')}")
+    except Exception as e:
+        logger.warning(f"Could not log user info: {e}")
+        logger.info("🚀 Bot is up and running!")
 
 async def admin_command(update, context):
     """Admin only: show bot stats."""
@@ -91,7 +101,7 @@ def main():
     # 3. Callback Query Handlers (Menus)
     application.add_handler(CallbackQueryHandler(weather_now_handler, pattern=f"^({WEATHER_NOW}|{REFRESH_WEATHER})$"))
     application.add_handler(CallbackQueryHandler(weather_details_handler, pattern=f"^{WEATHER_DETAILS}$"))
-    application.add_handler(CallbackQueryHandler(show_stats_handler, pattern=f"^{WEATHER_STATS}|{STATS}$"))
+    application.add_handler(CallbackQueryHandler(show_stats_handler, pattern=f"^({WEATHER_STATS}|{STATS})$"))
     application.add_handler(CallbackQueryHandler(settings_main_handler, pattern=f"^{SETTINGS}$"))
     application.add_handler(CallbackQueryHandler(notification_prefs_handler, pattern=f"^{NOTIFICATION_PREFS}$"))
     application.add_handler(CallbackQueryHandler(toggle_notification_handler, pattern="^toggle_"))

@@ -1,5 +1,6 @@
 import logging
 import datetime
+import traceback
 import pytz
 from telegram.ext import ContextTypes
 from database import (
@@ -25,30 +26,38 @@ def get_greeting(name, hour):
 async def send_daily_notifications(context: ContextTypes.DEFAULT_TYPE):
     """
     Background task to check and send daily notifications.
+    Runs every 60 seconds, uses a 5-minute window for time matching.
     """
     try:
         users = await get_all_active_users()
         utc_now = datetime.datetime.now(pytz.utc)
         
+        logger.debug(f"📋 Checking notifications for {len(users)} active users at UTC {utc_now.strftime('%H:%M:%S')}")
+        
         for user in users:
             try:
                 user_id = user['user_id']
+                
+                # Check if user has notifications enabled
+                if not user.get('is_active', True):
+                    continue
+                
                 # Need to fetch city details from new table
                 city_data = await get_primary_city(user_id)
                 
                 if not city_data:
-                    logger.warning(f"User {user_id} has no primary city. Skipping.")
+                    logger.debug(f"⏭ User {user_id}: no primary city, skipping")
                     continue
 
                 lat = city_data['latitude']
                 lon = city_data['longitude']
                 city_name = city_data['city_name']
                 
-                pref_time_str = user['notification_time']
-                timezone_str = user['timezone']
-                sensitivity = user['temperature_sensitivity']
-                last_notif = user['last_notification']
-                name = user['user_name'] or "друг"
+                pref_time_str = user.get('notification_time', '07:00')
+                timezone_str = user.get('timezone', 'Europe/Moscow')
+                sensitivity = user.get('temperature_sensitivity', 'normal')
+                last_notif = user.get('last_notification')
+                name = user.get('user_name') or "друг"
 
                 # Timezone check
                 try:
@@ -58,43 +67,92 @@ async def send_daily_notifications(context: ContextTypes.DEFAULT_TYPE):
                     user_tz = pytz.timezone('Europe/Moscow')
                     user_local_time = utc_now.astimezone(user_tz)
 
-                if user_local_time.strftime("%H:%M") != pref_time_str:
+                # Parse preferred notification time
+                try:
+                    pref_hour, pref_minute = map(int, pref_time_str.split(':'))
+                except (ValueError, AttributeError):
+                    pref_hour, pref_minute = 7, 0
+                
+                # Use a 5-minute window for matching to avoid missing notifications
+                # This handles scheduler delays, server load, and clock drift
+                current_total_minutes = user_local_time.hour * 60 + user_local_time.minute
+                pref_total_minutes = pref_hour * 60 + pref_minute
+                
+                time_diff = abs(current_total_minutes - pref_total_minutes)
+                # Also handle midnight wraparound (e.g., pref=23:59, current=00:01)
+                time_diff = min(time_diff, 1440 - time_diff)
+                
+                if time_diff > 2:
                     continue
 
-                # Once per day check
+                # Once per day check — handle both datetime objects and strings
                 if last_notif:
                     try:
-                        last_notif_dt = datetime.datetime.strptime(last_notif, "%Y-%m-%d %H:%M:%S")
-                        last_notif_dt = last_notif_dt.replace(tzinfo=pytz.utc)
-                        last_notif_local = last_notif_dt.astimezone(user_tz)
-                        if last_notif_local.date() == user_local_time.date():
-                            continue
-                    except ValueError:
-                        pass
+                        if isinstance(last_notif, datetime.datetime):
+                            last_notif_dt = last_notif
+                            if last_notif_dt.tzinfo is None:
+                                last_notif_dt = last_notif_dt.replace(tzinfo=pytz.utc)
+                        elif isinstance(last_notif, str):
+                            # Try multiple date formats
+                            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S.%f"]:
+                                try:
+                                    last_notif_dt = datetime.datetime.strptime(last_notif, fmt)
+                                    last_notif_dt = last_notif_dt.replace(tzinfo=pytz.utc)
+                                    break
+                                except ValueError:
+                                    continue
+                            else:
+                                last_notif_dt = None
+                                logger.warning(f"Could not parse last_notification string for user {user_id}: {last_notif}")
+                        else:
+                            last_notif_dt = None
+                        
+                        if last_notif_dt:
+                            last_notif_local = last_notif_dt.astimezone(user_tz)
+                            if last_notif_local.date() == user_local_time.date():
+                                logger.debug(f"⏭ User {user_id}: already notified today")
+                                continue  # Already notified today
+                    except Exception as parse_err:
+                        logger.warning(f"Could not parse last_notification for user {user_id}: {parse_err}")
 
-                logger.info(f"Sending daily notification to user {user_id}...")
+                logger.info(f"📨 Sending daily notification to user {user_id} (time: {pref_time_str}, tz: {timezone_str}, local: {user_local_time.strftime('%H:%M')})")
 
                 forecast = await get_forecast(lat=lat, lon=lon)
                 if not forecast:
+                    logger.warning(f"No forecast data for user {user_id}, city {city_name}")
                     continue
 
                 # Fetch UV and AQI for morning notification
-                uv = await get_uv_index(city_name)
-                aqi = await get_air_quality(city_name)
+                uv = None
+                aqi = None
+                try:
+                    uv = await get_uv_index(city_name)
+                except Exception as uv_err:
+                    logger.warning(f"Failed to get UV for {city_name}: {uv_err}")
+                try:
+                    aqi = await get_air_quality(city_name)
+                except Exception as aqi_err:
+                    logger.warning(f"Failed to get AQI for {city_name}: {aqi_err}")
 
-                content = format_daily_forecast(forecast, sensitivity, city_name, name, uv_index=uv, aqi_data=aqi)
+                try:
+                    content = format_daily_forecast(forecast, sensitivity, city_name, name, uv_index=uv, aqi_data=aqi)
+                except Exception as fmt_err:
+                    logger.error(f"Error formatting forecast for user {user_id}: {fmt_err}", exc_info=True)
+                    content = "❌ Не удалось сформировать прогноз."
+                    
                 greeting = get_greeting(name, user_local_time.hour)
                 
                 message = f"{greeting}\n\n{content}"
                 
                 await context.bot.send_message(chat_id=user_id, text=message, parse_mode='HTML')
                 await update_last_notification(user_id)
+                logger.info(f"✅ Daily notification sent to user {user_id}")
 
             except Exception as u_e:
-                logger.error(f"Error processing user {user.get('user_id')}: {u_e}")
+                logger.error(f"Error processing user {user.get('user_id')}: {u_e}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"Error in daily notification job: {e}")
+        logger.error(f"Error in daily notification job: {e}", exc_info=True)
 
 async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
     """
@@ -182,23 +240,24 @@ def setup_scheduler(application):
     """
     job_queue = application.job_queue
     
-    # Existing Daily Notifications (every minute check)
-    # misfire_grace_time=30 means: if job is late by >30s, skip it
+    # Daily Notifications (check every 60 seconds)
+    # misfire_grace_time=120 means: if job is late by >120s, skip it
+    # This is more lenient to handle server load/restarts
     job_queue.run_repeating(
         send_daily_notifications, 
         interval=60, 
         first=10,
         name="daily_notifications",
-        job_kwargs={'misfire_grace_time': 30}
+        job_kwargs={'misfire_grace_time': 120}
     )
     
-    # History Job (End of day) - once per day at 23:55
-    job_queue.run_repeating(
+    # History Job (End of day) - once per day at 20:55 UTC (~23:55 Moscow)
+    import datetime as dt
+    job_queue.run_daily(
         save_daily_history_job, 
-        interval=86400, 
-        first=80000,
+        time=dt.time(hour=20, minute=55, tzinfo=pytz.utc),
         name="daily_history",
-        job_kwargs={'misfire_grace_time': 300}
+        job_kwargs={'misfire_grace_time': 600}
     )
     
     # Smart Alerts - DISABLED due to user feedback (spam)
@@ -240,4 +299,4 @@ def setup_scheduler(application):
     #     job_kwargs={'misfire_grace_time': 60}
     # )
     
-    logger.info("✅ Scheduler configured. (Smart alerts are disabled)")
+    logger.info("✅ Scheduler configured: daily notifications every 60s (grace=120s), history daily at 20:55 UTC")

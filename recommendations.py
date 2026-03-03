@@ -171,7 +171,9 @@ def format_daily_forecast(forecast_data: dict, sensitivity: str, city_name: str,
     if uv_index is not None or aqi_data:
         details = "\n📊 <b>Дополнительно:</b>\n"
         if uv_index is not None:
-             uv_text = format_uv_recommendation(uv_index).split("\n", 1)[1] # Skip the first line as index is in header
+             uv_full = format_uv_recommendation(uv_index)
+             uv_parts = uv_full.split("\n", 1)
+             uv_text = uv_parts[1] if len(uv_parts) > 1 else uv_full
              details += uv_text + "\n"
         if aqi_data:
              aqi_text = format_aqi_message(aqi_data.get('aqi_val', 0))

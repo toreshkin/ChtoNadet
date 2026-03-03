@@ -29,19 +29,22 @@ async def show_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else: await update.message.reply_text(msg)
         return
 
-    graph_path = generate_weekly_trend_graph(history, city['city_name'])
+    # generate_weekly_trend_graph returns a formatted text string (emoji graph)
+    stats_text = generate_weekly_trend_graph(history)
     
-    caption = f"📊 <b>Статистика: {city['city_name']}</b>\nТренды температуры за неделю."
+    if not stats_text:
+        msg = "⚠️ Не удалось сформировать статистику."
+        if query: await query.message.reply_text(msg)
+        else: await update.message.reply_text(msg)
+        return
     
-    # Read into memory to allow file deletion
-    with open(graph_path, 'rb') as f:
-        photo_bytes = f.read()
-        
-    # Cleanup graph
-    if os.path.exists(graph_path):
-        os.remove(graph_path)
-
+    caption = f"📊 <b>Статистика: {city['city_name']}</b>\n\n{stats_text}"
+    
     if query:
-        await query.message.reply_photo(photo=photo_bytes, caption=caption, parse_mode='HTML', reply_markup=get_back_keyboard())
+        try:
+            await query.edit_message_text(caption, parse_mode='HTML', reply_markup=get_back_keyboard())
+        except Exception:
+            await query.message.reply_text(caption, parse_mode='HTML', reply_markup=get_back_keyboard())
     else:
-        await update.message.reply_photo(photo=photo_bytes, caption=caption, parse_mode='HTML')
+        await update.message.reply_text(caption, parse_mode='HTML')
+
